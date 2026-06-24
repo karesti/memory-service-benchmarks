@@ -33,11 +33,14 @@ public class MemoryServiceClient {
     @ConfigProperty(name = "benchmark.cognition.poll-interval-seconds", defaultValue = "10")
     int pollIntervalSeconds;
 
-    private final HttpClient http = HttpClient.newBuilder()
+   @ConfigProperty(name = "benchmark.cognition.stable-seconds", defaultValue = "90")
+   int stableSeconds;
+
+   private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
             .build();
 
-    private final Map<String, String> conversationIds = new HashMap<>();
+   private final Map<String, String> conversationIds = new HashMap<>();
 
     public String createConversation(String userId, String title) throws Exception {
         String cached = conversationIds.get(userId);
@@ -121,18 +124,28 @@ public class MemoryServiceClient {
     public int waitForCognition(String userId) throws InterruptedException {
         long deadline = System.currentTimeMillis() + (waitTimeoutSeconds * 1000L);
         int lastCount = 0;
+        long lastChangeTime = 0;
+
+        log.infof("Waiting for cognition (timeout=%ds, stable=%ds)...", waitTimeoutSeconds, stableSeconds);
 
         while (System.currentTimeMillis() < deadline) {
             try {
-                List<MemoryResult> results = searchMemories(userId, "", 1);
+                List<MemoryResult> results = searchMemories(userId, "", 100);
                 int count = results.size();
+                long elapsed = (waitTimeoutSeconds * 1000L - (deadline - System.currentTimeMillis())) / 1000;
+
                 if (count != lastCount) {
-                    long elapsed = (waitTimeoutSeconds * 1000L - (deadline - System.currentTimeMillis())) / 1000;
                     log.infof("Cognition progress for user=%s: %d memories found (%ds elapsed)", userId, count, elapsed);
                     lastCount = count;
+                    lastChangeTime = System.currentTimeMillis();
                 }
-                if (count > 0) {
-                    return count;
+
+                if (count > 0 && lastChangeTime > 0) {
+                    long stableFor = (System.currentTimeMillis() - lastChangeTime) / 1000;
+                    if (stableFor >= stableSeconds) {
+                        log.infof("Cognition stable for %ds with %d memories — proceeding", stableFor, count);
+                        return count;
+                    }
                 }
             } catch (Exception e) {
                 log.debugf("Cognition poll error for user=%s: %s", userId, e.getMessage());
@@ -140,7 +153,7 @@ public class MemoryServiceClient {
             Thread.sleep(pollIntervalSeconds * 1000L);
         }
 
-        log.warnf("Cognition wait timed out for user=%s (%d memories found)", userId, lastCount);
+        log.warnf("Cognition wait timed out for user=%s after %ds (%d memories found)", userId, waitTimeoutSeconds, lastCount);
         return lastCount;
     }
 

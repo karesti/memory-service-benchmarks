@@ -24,7 +24,10 @@ public class LocomoBenchmark implements QuarkusApplication {
     MemoryServiceClient memoryService;
 
     @Inject
-    LlmJudge llmJudge;
+    LlmAnswerGenerator answerGenerator;
+
+    @Inject
+    LlmJudge verdictJudge;
 
     @ConfigProperty(name = "benchmark.dataset", defaultValue = "datasets/locomo10.json")
     String datasetPath;
@@ -165,7 +168,7 @@ public class LocomoBenchmark implements QuarkusApplication {
         // Generate answer
         String generatedAnswer;
         try {
-            generatedAnswer = llmJudge.generateAnswer(memoriesText, qa.question());
+            generatedAnswer = answerGenerator.generateAnswer(memoriesText, qa.question());
         } catch (Exception e) {
             generatedAnswer = "ERROR: " + e.getMessage();
         }
@@ -174,7 +177,7 @@ public class LocomoBenchmark implements QuarkusApplication {
         String verdict = "WRONG";
         String reason = "";
         try {
-            String judgeResponse = llmJudge.judge(qa.question(), qa.answer(), generatedAnswer);
+            String judgeResponse = verdictJudge.judge(qa.question(), qa.answer(), generatedAnswer);
             @SuppressWarnings("unchecked")
             Map<String, String> parsed = mapper.readValue(
                     extractJson(judgeResponse), Map.class);

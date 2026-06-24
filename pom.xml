@@ -15,7 +15,6 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <quarkus.platform.version>3.36.2</quarkus.platform.version>
-    <quarkus-langchain4j.version>1.11.2</quarkus-langchain4j.version>
     <memory-service.version>999-SNAPSHOT</memory-service.version>
   </properties>
 
@@ -24,6 +23,13 @@
       <dependency>
         <groupId>io.quarkus.platform</groupId>
         <artifactId>quarkus-bom</artifactId>
+        <version>${quarkus.platform.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.quarkus.platform</groupId>
+        <artifactId>quarkus-langchain4j-bom</artifactId>
         <version>${quarkus.platform.version}</version>
         <type>pom</type>
         <scope>import</scope>
@@ -49,7 +55,6 @@
     <dependency>
       <groupId>io.quarkiverse.langchain4j</groupId>
       <artifactId>quarkus-langchain4j-openai</artifactId>
-      <version>${quarkus-langchain4j.version}</version>
     </dependency>
 
     <!-- CLI application -->
