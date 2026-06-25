@@ -1,11 +1,17 @@
-package io.github.chirino.memory.benchmark;
+package io.github.memory.benchmark.locomo;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+
+import io.github.memory.benchmark.BenchmarkConfig;
+import io.github.memory.benchmark.BenchmarkResult;
+import io.github.memory.benchmark.LlmAnswerGenerator;
+import io.github.memory.benchmark.LlmJudge;
+import io.github.memory.benchmark.MemoryServiceClient;
+import io.github.memory.benchmark.MetricsReport;
 import io.quarkus.runtime.QuarkusApplication;
 import io.quarkus.runtime.annotations.QuarkusMain;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.nio.file.Files;
@@ -15,9 +21,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @QuarkusMain
-public class LocomoBenchmark implements QuarkusApplication {
+public class LoCoMoBenchmark implements QuarkusApplication {
 
-    private static final Logger log = Logger.getLogger(LocomoBenchmark.class);
+    private static final Logger log = Logger.getLogger(LoCoMoBenchmark.class);
     private static final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
     @Inject
@@ -29,20 +35,8 @@ public class LocomoBenchmark implements QuarkusApplication {
     @Inject
     LlmJudge verdictJudge;
 
-    @ConfigProperty(name = "benchmark.dataset", defaultValue = "datasets/locomo10.json")
-    String datasetPath;
-
-    @ConfigProperty(name = "benchmark.conversations", defaultValue = "0,1,2,3,4,5,6,7,8,9")
-    String conversationsConfig;
-
-    @ConfigProperty(name = "benchmark.top-k", defaultValue = "50")
-    int topK;
-
-    @ConfigProperty(name = "benchmark.cognition.enabled", defaultValue = "true")
-    boolean cognitionEnabled;
-
-    @ConfigProperty(name = "benchmark.output-dir", defaultValue = "results")
-    String outputDir;
+    @Inject
+    BenchmarkConfig config;
 
     @Override
     public int run(String... args) {
@@ -57,16 +51,16 @@ public class LocomoBenchmark implements QuarkusApplication {
 
     private void execute() throws Exception {
         log.info("Loading LoCoMo dataset...");
-        List<LocomoDataset.Conversation> dataset = LocomoDataset.load(Path.of(datasetPath));
+        List<LoCoMoDataset.Conversation> dataset = LoCoMoDataset.load(Path.of(config.dataset()));
         log.infof("Loaded %d conversations", dataset.size());
 
-        Set<Integer> targetConvs = Arrays.stream(conversationsConfig.split(","))
+        Set<Integer> targetConvs = Arrays.stream(config.conversations().split(","))
                 .map(String::strip)
                 .map(Integer::parseInt)
                 .collect(Collectors.toCollection(TreeSet::new));
 
         log.infof("Running benchmark: conversations=%s, cognition=%s, topK=%d",
-                targetConvs, cognitionEnabled, topK);
+                targetConvs, config.cognition().enabled(), config.topK());
 
         List<BenchmarkResult> allResults = new ArrayList<>();
 
@@ -76,7 +70,7 @@ public class LocomoBenchmark implements QuarkusApplication {
                 continue;
             }
 
-            LocomoDataset.Conversation conv = dataset.get(convIdx);
+            LoCoMoDataset.Conversation conv = dataset.get(convIdx);
             String userId = "locomo_" + convIdx;
 
             log.infof("=== Conversation %d: %s & %s (%d sessions, %d questions) ===",
@@ -87,7 +81,7 @@ public class LocomoBenchmark implements QuarkusApplication {
             ingestConversation(userId, conv);
 
             // Phase 2: Wait for cognition processor (if enabled)
-            if (cognitionEnabled) {
+            if (config.cognition().enabled()) {
                 log.infof("Waiting for cognition processor to extract memories for user=%s...", userId);
                 int memCount = memoryService.waitForCognition(userId);
                 log.infof("Cognition ready: %d memories extracted for user=%s", memCount, userId);
@@ -112,12 +106,12 @@ public class LocomoBenchmark implements QuarkusApplication {
         writeResults(allResults, summary);
     }
 
-    private void ingestConversation(String userId, LocomoDataset.Conversation conv) throws Exception {
+    private void ingestConversation(String userId, LoCoMoDataset.Conversation conv) throws Exception {
         String convId = memoryService.createConversation(userId, "locomo-conv-" + conv.index());
 
         int entryCount = 0;
-        for (LocomoDataset.Session session : conv.sessions()) {
-            for (LocomoDataset.Turn turn : session.turns()) {
+        for (LoCoMoDataset.Session session : conv.sessions()) {
+            for (LoCoMoDataset.Turn turn : session.turns()) {
                 String role = turn.speaker().equals(conv.speakerA()) ? "USER" : "AI";
                 String text = turn.speaker() + ": " + turn.text();
                 memoryService.appendEntry(userId, convId, role, text);
@@ -127,10 +121,10 @@ public class LocomoBenchmark implements QuarkusApplication {
         log.infof("Ingested %d entries into conversation %s", entryCount, convId);
     }
 
-    private List<BenchmarkResult> processQuestions(LocomoDataset.Conversation conv, String userId) {
+    private List<BenchmarkResult> processQuestions(LoCoMoDataset.Conversation conv, String userId) {
         List<BenchmarkResult> results = new ArrayList<>();
 
-        for (LocomoDataset.QA qa : conv.questions()) {
+        for (LoCoMoDataset.QA qa : conv.questions()) {
             // Skip category 5 (adversarial/unanswerable) for now — needs special handling
             if (qa.category() == 5) continue;
 
@@ -150,12 +144,12 @@ public class LocomoBenchmark implements QuarkusApplication {
         return results;
     }
 
-    private BenchmarkResult processQuestion(int convIdx, LocomoDataset.QA qa, String userId) throws Exception {
+    private BenchmarkResult processQuestion(int convIdx, LoCoMoDataset.QA qa, String userId) throws Exception {
         String questionId = "conv" + convIdx + "_q" + qa.index();
 
         // Search memories
         long searchStart = System.nanoTime();
-        List<MemoryServiceClient.MemoryResult> memories = memoryService.searchMemories(userId, qa.question(), topK);
+        List<MemoryServiceClient.MemoryResult> memories = memoryService.searchMemories(userId, qa.question(), config.topK());
         double searchLatencyMs = (System.nanoTime() - searchStart) / 1_000_000.0;
 
         // Format memories for LLM
@@ -217,21 +211,21 @@ public class LocomoBenchmark implements QuarkusApplication {
     }
 
     private void writeResults(List<BenchmarkResult> results, MetricsReport.Summary summary) throws Exception {
-        Path outDir = Path.of(outputDir);
+        Path outDir = Path.of(config.outputDir());
         Files.createDirectories(outDir);
 
         String timestamp = Instant.now().toString().replace(":", "-").substring(0, 19);
-        String mode = cognitionEnabled ? "cognition" : "substrate";
+        String mode = config.cognition().enabled() ? "cognition" : "substrate";
         Path outPath = outDir.resolve("locomo_" + mode + "_" + timestamp + ".json");
 
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("metadata", Map.of(
                 "benchmark", "locomo",
                 "mode", mode,
-                "cognition_enabled", cognitionEnabled,
-                "top_k", topK,
+                "cognition_enabled", config.cognition().enabled(),
+                "top_k", config.topK(),
                 "timestamp", Instant.now().toString(),
-                "dataset", datasetPath
+                "dataset", config.dataset()
         ));
         output.put("summary", Map.of(
                 "overall_accuracy", summary.overallAccuracy(),

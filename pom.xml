@@ -9,7 +9,7 @@
   <version>1.0.0-SNAPSHOT</version>
   <packaging>jar</packaging>
   <name>Memory Service Benchmarks</name>
-  <description>LoCoMo and other memory benchmarks for the Memory Service cognition pipeline</description>
+  <description>Memory benchmarks (LoCoMo) for the Memory Service cognition pipeline</description>
 
   <properties>
     <maven.compiler.release>21</maven.compiler.release>

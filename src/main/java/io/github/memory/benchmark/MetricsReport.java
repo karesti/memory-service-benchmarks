@@ -1,4 +1,4 @@
-package io.github.chirino.memory.benchmark;
+package io.github.memory.benchmark;
 
 import java.util.*;
 import java.util.stream.Collectors;

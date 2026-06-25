@@ -1,4 +1,4 @@
-package io.github.chirino.memory.benchmark;
+package io.github.memory.benchmark;
 
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
