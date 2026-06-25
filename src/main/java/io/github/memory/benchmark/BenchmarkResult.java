@@ -4,8 +4,8 @@ import java.util.List;
 
 public record BenchmarkResult(
         String questionId,
-        int conversationIndex,
-        int category,
+        String benchmark,
+        String category,
         String question,
         String groundTruth,
         String generatedAnswer,

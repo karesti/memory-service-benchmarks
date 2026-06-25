@@ -5,25 +5,10 @@ import java.util.stream.Collectors;
 
 public class MetricsReport {
 
-    private static final Map<Integer, String> CATEGORY_NAMES = Map.of(
-            1, "Multi-hop",
-            2, "Temporal",
-            3, "Causal",
-            4, "Factual",
-            5, "Adversarial"
-    );
-
-    private static final Map<Integer, String> CATEGORY_DESC = Map.of(
-            1, "Connecting facts across sessions",
-            2, "Dates, timing, sequences",
-            3, "Reasoning about causes",
-            4, "Direct fact recall",
-            5, "Questions about non-existent events"
-    );
-
-    public record CategoryMetrics(String name, String description, int total, int correct, double accuracy) {}
+    public record CategoryMetrics(String name, int total, int correct, double accuracy) {}
 
     public record Summary(
+            String benchmarkName,
             double overallAccuracy,
             int totalQuestions,
             int totalCorrect,
@@ -32,27 +17,25 @@ public class MetricsReport {
             List<CategoryMetrics> byCategory
     ) {}
 
-    public static Summary compute(List<BenchmarkResult> results) {
+    public static Summary compute(String benchmarkName, List<BenchmarkResult> results) {
         if (results.isEmpty()) {
-            return new Summary(0, 0, 0, 0, 0, List.of());
+            return new Summary(benchmarkName, 0, 0, 0, 0, 0, List.of());
         }
 
         int totalCorrect = (int) results.stream().filter(BenchmarkResult::isCorrect).count();
         double avgLatency = results.stream().mapToDouble(BenchmarkResult::searchLatencyMs).average().orElse(0);
         double avgMemories = results.stream().mapToDouble(BenchmarkResult::memoriesRetrieved).average().orElse(0);
 
-        Map<Integer, List<BenchmarkResult>> byCategory = results.stream()
+        Map<String, List<BenchmarkResult>> byCategory = results.stream()
                 .collect(Collectors.groupingBy(BenchmarkResult::category));
 
         List<CategoryMetrics> categoryMetrics = byCategory.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(e -> {
-                    int cat = e.getKey();
                     List<BenchmarkResult> catResults = e.getValue();
                     int catCorrect = (int) catResults.stream().filter(BenchmarkResult::isCorrect).count();
                     return new CategoryMetrics(
-                            CATEGORY_NAMES.getOrDefault(cat, "unknown-" + cat),
-                            CATEGORY_DESC.getOrDefault(cat, ""),
+                            e.getKey(),
                             catResults.size(),
                             catCorrect,
                             catResults.isEmpty() ? 0 : (double) catCorrect / catResults.size()
@@ -61,6 +44,7 @@ public class MetricsReport {
                 .toList();
 
         return new Summary(
+                benchmarkName,
                 (double) totalCorrect / results.size(),
                 results.size(),
                 totalCorrect,
@@ -74,7 +58,8 @@ public class MetricsReport {
         StringBuilder sb = new StringBuilder();
         sb.append("\n");
         sb.append("┌─────────────────────────────────────────────────────────────┐\n");
-        sb.append("│                  LoCoMo Benchmark Results                   │\n");
+        sb.append(String.format("│            %s Benchmark Results%s│\n",
+                s.benchmarkName(), pad(60 - 25 - s.benchmarkName().length())));
         sb.append("├─────────────────────────────────────────────────────────────┤\n");
         sb.append("│                                                             │\n");
         sb.append(String.format("│  Overall Accuracy:   %5.1f%%  (%d / %d questions)%s│\n",
@@ -85,10 +70,17 @@ public class MetricsReport {
         sb.append("│  Category Breakdown                                        │\n");
         sb.append("│                                                             │\n");
 
+        int maxNameLen = s.byCategory().stream()
+                .mapToInt(cm -> cm.name().length())
+                .max().orElse(10);
+        maxNameLen = Math.max(maxNameLen, 10);
+
         for (CategoryMetrics cm : s.byCategory()) {
-            String bar = progressBar(cm.accuracy(), 15);
-            sb.append(String.format("│  %-10s %s %5.1f%%  (%2d / %2d)  %-25s│\n",
-                    cm.name(), bar, cm.accuracy() * 100, cm.correct(), cm.total(), cm.description()));
+            String bar = progressBar(cm.accuracy(), 12);
+            String line = String.format("│  %-" + maxNameLen + "s %s %5.1f%%  (%2d / %2d)",
+                    cm.name(), bar, cm.accuracy() * 100, cm.correct(), cm.total());
+            int remaining = 62 - line.length();
+            sb.append(line).append(pad(remaining)).append("│\n");
         }
 
         sb.append("│                                                             │\n");

@@ -1,6 +1,11 @@
 # Memory Service Benchmarks
 
-LoCoMo benchmark harness for evaluating the memory-service cognition pipeline.
+Benchmark harness for evaluating the memory-service cognition pipeline using industry-standard datasets.
+
+## Supported Benchmarks
+
+- **LoCoMo** (ACL 2024): 10 multi-session conversations, ~200 QA pairs, 5 categories
+- **LongMemEval** (ICLR 2025): 500 independent questions, 6 types, each with its own conversation history
 
 ## Prerequisites
 
@@ -46,11 +51,9 @@ cd memory-service-benchmarks
 ./mvnw clean package -DskipTests
 ```
 
-## Running the benchmark
+## Running the benchmarks
 
-### Mode 1: With cognition (full pipeline)
-
-Tests: ingest conversations → cognition processor extracts memories → semantic search → LLM answers → LLM judges.
+### Start the services
 
 **Terminal 1 — Memory service:**
 
@@ -64,7 +67,7 @@ MEMORY_SERVICE_AIR_FULL_BIN="./bin/memory-service serve" \
 task dev:memory-service
 ```
 
-**Terminal 2 — Cognition processor:**
+**Terminal 2 — Cognition processor** (skip for no-cognition runs):
 
 ```bash
 cd cognitive-memory/cognition-processor-quarkus
@@ -76,20 +79,37 @@ OPENAI_MODEL_NAME=gpt-4o-mini \
 ./mvnw quarkus:dev
 ```
 
-**Terminal 3 — Benchmark:**
+### LoCoMo
 
 ```bash
-cd memory-service-benchmarks
-java -Xmx2g -Dbenchmark.conversations=0 -jar target/quarkus-app/quarkus-run.jar
+# Single conversation (quick test)
+java -Xmx2g -Dbenchmark.conversations=0 -jar target/quarkus-app/quarkus-run.jar locomo
+
+# All 10 conversations
+java -Xmx2g -jar target/quarkus-app/quarkus-run.jar locomo
+
+# Without cognition (stop cognition processor first)
+java -Xmx2g -Dbenchmark.cognition.enabled=false -jar target/quarkus-app/quarkus-run.jar locomo
 ```
 
-### Mode 2: Without cognition (substrate only)
-
-Skip terminal 2 (no cognition processor). Run with cognition disabled:
+### LongMemEval
 
 ```bash
-java -Xmx2g -Dbenchmark.conversations=0 -Dbenchmark.cognition.enabled=false \
-  -jar target/quarkus-app/quarkus-run.jar
+# Quick smoke test (2 per type = 12 questions)
+java -Xmx2g -Dbenchmark.longmemeval.per-type=2 -jar target/quarkus-app/quarkus-run.jar longmemeval
+
+# Default (5 per type = 30 questions)
+java -Xmx2g -jar target/quarkus-app/quarkus-run.jar longmemeval
+
+# All 500 questions (takes many hours)
+java -Xmx2g -Dbenchmark.longmemeval.per-type=0 -jar target/quarkus-app/quarkus-run.jar longmemeval
+
+# Filter by question type
+java -Xmx2g -Dbenchmark.longmemeval.question-types=temporal-reasoning,multi-session \
+  -jar target/quarkus-app/quarkus-run.jar longmemeval
+
+# Without cognition
+java -Xmx2g -Dbenchmark.cognition.enabled=false -jar target/quarkus-app/quarkus-run.jar longmemeval
 ```
 
 ### Clean run (reset database)
@@ -111,59 +131,55 @@ Results are written to `results/` as JSON:
 ```
 results/locomo_cognition_2026-06-25T08-27-19.json
 results/locomo_substrate_2026-06-25T08-30-00.json
-```
-
-Example output:
-
-```
-╔══════════════════════════════════════════════════╗
-║          LoCoMo Benchmark Results                ║
-╠══════════════════════════════════════════════════╣
-║  Overall Accuracy:  16.4% (25/152)              ║
-║  Avg Search Latency: 251 ms                     ║
-║  Avg Memories/Query: 50.0                        ║
-╠══════════════════════════════════════════════════╣
-║  Category Breakdown:                             ║
-║    multi-hop       15.6% (5/32)                  ║
-║    temporal         2.7% (1/37)                  ║
-║    causal           7.7% (1/13)                  ║
-║    factual         25.7% (18/70)                 ║
-╚══════════════════════════════════════════════════╝
+results/longmemeval_cognition_2026-06-25T10-15-00.json
 ```
 
 ## Configuration
 
-All settings in `src/main/resources/application.properties`, using `@ConfigMapping`:
+All settings in `src/main/resources/application.properties`:
 
 | Property | Default | Description |
 |---|---|---|
 | `memory-service.url` | `http://localhost:8082` | Memory service URL |
 | `memory-service.api-key` | `agent-api-key-1` | API key for authentication |
-| `benchmark.dataset` | `datasets/locomo10.json` | Path to LoCoMo dataset |
-| `benchmark.conversations` | `0,1,2,3,4,5,6,7,8,9` | Which conversations to run |
 | `benchmark.top-k` | `50` | Max memories to retrieve per question |
 | `benchmark.output-dir` | `results` | Output directory |
 | `benchmark.cognition.enabled` | `true` | Wait for cognition processor |
 | `benchmark.cognition.namespace` | `cognition.v1` | Cognition memory namespace |
 | `benchmark.cognition.wait-timeout-seconds` | `600` | Max wait for extraction |
 | `benchmark.cognition.poll-interval-seconds` | `10` | Polling interval |
-| `benchmark.cognition.stable-seconds` | `90` | Seconds of no new memories before proceeding |
-| `benchmark.httpclient.connection-timeout` | `30` | HTTP connection timeout |
+| `benchmark.cognition.stable-seconds` | `90` | Seconds of stability before proceeding |
+
+**LoCoMo-specific:**
+
+| Property | Default | Description |
+|---|---|---|
+| `benchmark.dataset` | `datasets/locomo10.json` | Path to LoCoMo dataset |
+| `benchmark.conversations` | `0,1,2,3,4,5,6,7,8,9` | Which conversations to run |
+
+**LongMemEval-specific:**
+
+| Property | Default | Description |
+|---|---|---|
+| `benchmark.longmemeval.dataset` | `datasets/longmemeval_s_cleaned.json` | Path to LongMemEval dataset |
+| `benchmark.longmemeval.per-type` | `5` | Questions per type (0 = all) |
+| `benchmark.longmemeval.seed` | `42` | Random seed for sampling |
+| `benchmark.longmemeval.question-types` | _(all)_ | Comma-separated type filter |
 
 Override any property with `-D`:
 
 ```bash
-java -Xmx2g -Dbenchmark.conversations=0,1 -Dbenchmark.top-k=20 -jar target/quarkus-app/quarkus-run.jar
+java -Xmx2g -Dbenchmark.top-k=20 -jar target/quarkus-app/quarkus-run.jar locomo
 ```
 
 ## Architecture
 
 ```
-LoCoMo dataset (10 conversations, ~200 QA)
+Dataset (LoCoMo / LongMemEval)
         │
         ▼
 ┌──────────────────────────┐
-│  LoCoMoBenchmark (main)  │
+│  Benchmark Runner        │
 │  1. Ingest conversations │──→  Memory Service (REST API :8082)
 │  2. Wait for cognition   │         │
 │  3. Search memories      │         ▼
@@ -176,14 +192,29 @@ LoCoMo dataset (10 conversations, ~200 QA)
    results/*.json
 ```
 
-## What LoCoMo tests
+## What the benchmarks test
 
-LoCoMo (ACL 2024) provides 10 multi-session conversations with ~200 QA pairs across 5 categories:
+### LoCoMo (ACL 2024)
+
+10 multi-session conversations with ~200 QA pairs across 5 categories:
 
 | Category | Tests |
 |---|---|
-| 1 - Multi-hop | Connecting facts across sessions |
-| 2 - Temporal | Dates, timing, sequences |
-| 3 - Causal | Reasoning about why things happened |
-| 4 - Factual | Direct fact recall |
-| 5 - Adversarial | Questions about things never discussed (skipped) |
+| Multi-hop | Connecting facts across sessions |
+| Temporal | Dates, timing, sequences |
+| Causal | Reasoning about why things happened |
+| Factual | Direct fact recall |
+| Adversarial | Questions about things never discussed (skipped) |
+
+### LongMemEval (ICLR 2025)
+
+500 questions across 6 types, each with its own conversation history (~53 sessions):
+
+| Question Type | Tests |
+|---|---|
+| single-session-user | Facts stated by the user in one session |
+| single-session-assistant | Information provided by the assistant |
+| single-session-preference | User preferences expressed in one session |
+| temporal-reasoning | Time-based reasoning across sessions |
+| knowledge-update | Updated facts that override earlier ones |
+| multi-session | Connecting information across multiple sessions |
