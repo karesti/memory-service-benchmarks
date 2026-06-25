@@ -22,6 +22,8 @@ public interface BenchmarkConfig {
 
     HttpClient httpclient();
 
+    LongMemEval longmemeval();
+
     interface Cognition {
 
         @WithDefault("true")
@@ -44,5 +46,20 @@ public interface BenchmarkConfig {
 
         @WithDefault("30")
         int connectionTimeout();
+    }
+
+    interface LongMemEval {
+
+        @WithDefault("datasets/longmemeval_s_cleaned.json")
+        String dataset();
+
+        @WithDefault("5")
+        int perType();
+
+        @WithDefault("42")
+        int seed();
+
+        @WithDefault("")
+        String questionTypes();
     }
 }
