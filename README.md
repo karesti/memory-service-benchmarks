@@ -6,122 +6,134 @@ LoCoMo benchmark harness for evaluating the memory-service cognition pipeline.
 
 - Java 21+
 - Docker and Docker Compose
-- [Ollama](https://ollama.ai) (for embeddings)
-- An OpenAI API key (for the LLM judge)
+- [Task](https://taskfile.dev/) (`brew install go-task`)
+- [air](https://github.com/air-verse/air) (`go install github.com/air-verse/air@latest` — ensure `~/go/bin` is in PATH)
+- An OpenAI API key (for embeddings, cognition extraction, and the benchmark LLM judge)
 
 ## Setup (one time)
 
-### 1. Pull the embedding model for Ollama
-
-```bash
-ollama pull nomic-embed-text
-```
-
-### 2. Configure the memory-service for cognition
+### 1. Configure the memory-service for cognition
 
 From the `memory-service/` directory:
 
 ```bash
 cd ../memory-service
 cp ../cognitive-memory/memory-service/compose.override.yaml.example ./compose.override.yaml
-cp ../cognitive-memory/memory-service/.env.example ./.env
 ```
 
-This configures:
-- Ollama as the embedding provider (`nomic-embed-text`)
-- The `cognition_processor` API key and admin role
-- Docker network access to host Ollama
-
-### 3. Install the memory-service REST client (if not already done)
+### 2. Install the memory-service REST client
 
 ```bash
 cd ../memory-service
 ./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus -am install -DskipTests
 ```
 
-### 4. Set your OpenAI API key
+### 3. Set your OpenAI API key
+
+Add to your `~/.zshrc`:
 
 ```bash
 export OPENAI_API_KEY=sk-...
+export PATH=$PATH:$HOME/go/bin
 ```
 
-This is used by the benchmark's LLM judge (answer generation + correctness scoring).
-It is NOT used by the memory-service or cognition processor.
+Then `source ~/.zshrc`.
+
+### 4. Build the benchmark
+
+```bash
+cd memory-service-benchmarks
+./mvnw clean package -DskipTests
+```
 
 ## Running the benchmark
 
 ### Mode 1: With cognition (full pipeline)
 
-This tests: conversations ingested → cognition processor extracts memories → search returns extracted memories → LLM answers from memories.
+Tests: ingest conversations → cognition processor extracts memories → semantic search → LLM answers → LLM judges.
 
-**Terminal 1 — Start the infrastructure + memory-service:**
+**Terminal 1 — Memory service:**
 
 ```bash
-cd ../memory-service
+cd memory-service
+MEMORY_SERVICE_OPENAI_API_KEY=$OPENAI_API_KEY \
+MEMORY_SERVICE_ROLES_ADMIN_CLIENTS="admin,turn_traces_processor,cognition_processor" \
+MEMORY_SERVICE_ROLES_INDEXER_CLIENTS="agent,cognition_processor" \
+MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR=cognition-processor-key-123 \
+MEMORY_SERVICE_AIR_FULL_BIN="./bin/memory-service serve" \
 task dev:memory-service
 ```
 
-Wait until you see `Memory Service started on port 8082`.
-
-**Terminal 2 — Start the cognition processor:**
+**Terminal 2 — Cognition processor:**
 
 ```bash
-cd ../cognitive-memory/cognition-processor-quarkus
+cd cognitive-memory/cognition-processor-quarkus
+MEMORY_SERVICE_API_KEY=cognition-processor-key-123 \
+MEMORY_MODEL_PROVIDER=openai \
+MEMORY_MODEL_ID=gpt-4o-mini \
+OPENAI_BASE_URL=https://api.openai.com/v1 \
+OPENAI_MODEL_NAME=gpt-4o-mini \
 ./mvnw quarkus:dev
 ```
 
-Wait until you see it connected to the event stream.
-
-**Terminal 3 — Run the benchmark:**
+**Terminal 3 — Benchmark:**
 
 ```bash
 cd memory-service-benchmarks
-./mvnw quarkus:run
-```
-
-To test with just one conversation first (faster):
-
-```bash
-./mvnw quarkus:run -Dbenchmark.conversations=0
+java -Xmx2g -Dbenchmark.conversations=0 -jar target/quarkus-app/quarkus-run.jar
 ```
 
 ### Mode 2: Without cognition (substrate only)
 
-This tests: conversations ingested → search directly on conversation entries → no extracted memories.
-
-**Terminal 1 — Start the infrastructure + memory-service** (same as above):
+Skip terminal 2 (no cognition processor). Run with cognition disabled:
 
 ```bash
-cd ../memory-service
-task dev:memory-service
+java -Xmx2g -Dbenchmark.conversations=0 -Dbenchmark.cognition.enabled=false \
+  -jar target/quarkus-app/quarkus-run.jar
 ```
 
-**Terminal 2 — Run the benchmark without cognition:**
+### Clean run (reset database)
+
+To start fresh between runs:
 
 ```bash
-cd memory-service-benchmarks
-./mvnw quarkus:run -Dbenchmark.cognition.enabled=false
+cd memory-service
+docker compose down -v
+docker compose up -d qdrant postgres redis keycloak prometheus minio minio-init clickhouse langfuse-worker langfuse-web
 ```
 
-No need to start the cognition processor.
+Then restart memory-service and cognition processor.
 
 ## Results
 
 Results are written to `results/` as JSON:
 
 ```
-results/locomo_cognition_2026-06-22T15-30-00.json    # with cognition
-results/locomo_substrate_2026-06-22T15-35-00.json     # without cognition
+results/locomo_cognition_2026-06-25T08-27-19.json
+results/locomo_substrate_2026-06-25T08-30-00.json
 ```
 
-Each file contains:
-- Per-question results (question, generated answer, verdict, search latency, memories retrieved)
-- Per-category accuracy (multi-hop, temporal, causal, factual)
-- Overall accuracy and latency metrics
+Example output:
+
+```
+╔══════════════════════════════════════════════════╗
+║          LoCoMo Benchmark Results                ║
+╠══════════════════════════════════════════════════╣
+║  Overall Accuracy:  16.4% (25/152)              ║
+║  Avg Search Latency: 251 ms                     ║
+║  Avg Memories/Query: 50.0                        ║
+╠══════════════════════════════════════════════════╣
+║  Category Breakdown:                             ║
+║    multi-hop       15.6% (5/32)                  ║
+║    temporal         2.7% (1/37)                  ║
+║    causal           7.7% (1/13)                  ║
+║    factual         25.7% (18/70)                 ║
+╚══════════════════════════════════════════════════╝
+```
 
 ## Configuration
 
-All settings are in `src/main/resources/application.properties`:
+All settings in `src/main/resources/application.properties`, using `@ConfigMapping`:
 
 | Property | Default | Description |
 |---|---|---|
@@ -130,14 +142,18 @@ All settings are in `src/main/resources/application.properties`:
 | `benchmark.dataset` | `datasets/locomo10.json` | Path to LoCoMo dataset |
 | `benchmark.conversations` | `0,1,2,3,4,5,6,7,8,9` | Which conversations to run |
 | `benchmark.top-k` | `50` | Max memories to retrieve per question |
-| `benchmark.cognition.enabled` | `true` | Wait for cognition processor |
-| `benchmark.cognition.wait-timeout-seconds` | `600` | Max wait for extraction |
 | `benchmark.output-dir` | `results` | Output directory |
+| `benchmark.cognition.enabled` | `true` | Wait for cognition processor |
+| `benchmark.cognition.namespace` | `cognition.v1` | Cognition memory namespace |
+| `benchmark.cognition.wait-timeout-seconds` | `600` | Max wait for extraction |
+| `benchmark.cognition.poll-interval-seconds` | `10` | Polling interval |
+| `benchmark.cognition.stable-seconds` | `90` | Seconds of no new memories before proceeding |
+| `benchmark.httpclient.connection-timeout` | `30` | HTTP connection timeout |
 
 Override any property with `-D`:
 
 ```bash
-./mvnw quarkus:run -Dbenchmark.conversations=0,1 -Dbenchmark.top-k=20
+java -Xmx2g -Dbenchmark.conversations=0,1 -Dbenchmark.top-k=20 -jar target/quarkus-app/quarkus-run.jar
 ```
 
 ## Architecture
@@ -146,16 +162,28 @@ Override any property with `-D`:
 LoCoMo dataset (10 conversations, ~200 QA)
         │
         ▼
-┌─────────────────────────┐
-│  LocomoBenchmark (main)  │
+┌──────────────────────────┐
+│  LoCoMoBenchmark (main)  │
 │  1. Ingest conversations │──→  Memory Service (REST API :8082)
 │  2. Wait for cognition   │         │
 │  3. Search memories      │         ▼
 │  4. LLM answers          │     Cognition Processor (Quarkus :8090)
 │  5. LLM judges           │     extracts facts, preferences, procedures
 │  6. Compute metrics      │         │
-└─────────────────────────┘         ▼
+└──────────────────────────┘         ▼
         │                    Memory Service stores extracted memories
         ▼                    under ["user", userId, "cognition.v1", ...]
    results/*.json
 ```
+
+## What LoCoMo tests
+
+LoCoMo (ACL 2024) provides 10 multi-session conversations with ~200 QA pairs across 5 categories:
+
+| Category | Tests |
+|---|---|
+| 1 - Multi-hop | Connecting facts across sessions |
+| 2 - Temporal | Dates, timing, sequences |
+| 3 - Causal | Reasoning about why things happened |
+| 4 - Factual | Direct fact recall |
+| 5 - Adversarial | Questions about things never discussed (skipped) |

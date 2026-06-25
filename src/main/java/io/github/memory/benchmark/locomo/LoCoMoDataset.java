@@ -128,18 +128,4 @@ public class LoCoMoDataset {
         Matcher m = Pattern.compile("\\d+").matcher(sessionKey);
         return m.find() ? Integer.parseInt(m.group()) : 0;
     }
-
-    public static String formatTurnsAsMessages(Conversation conv) {
-        StringBuilder sb = new StringBuilder();
-        for (Session session : conv.sessions()) {
-            if (!session.dateTime().isBlank()) {
-                sb.append("[Session: ").append(session.dateTime()).append("]\n");
-            }
-            for (Turn turn : session.turns()) {
-                sb.append(turn.speaker()).append(": ").append(turn.text()).append("\n");
-            }
-            sb.append("\n");
-        }
-        return sb.toString();
-    }
 }

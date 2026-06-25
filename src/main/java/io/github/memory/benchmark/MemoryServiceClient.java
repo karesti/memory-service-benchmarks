@@ -1,5 +1,7 @@
 package io.github.memory.benchmark;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -29,6 +31,32 @@ public class MemoryServiceClient {
    private HttpClient http;
    private final Map<String, String> conversationIds = new HashMap<>();
 
+   // -- Response types --------------------------------------------------------
+
+   @JsonIgnoreProperties(ignoreUnknown = true)
+   public record ConversationResponse(String id, String title) {}
+
+   @JsonIgnoreProperties(ignoreUnknown = true)
+   public record SearchResponse(List<MemoryItem> items) {
+      public SearchResponse { if (items == null) items = List.of(); }
+   }
+
+   @JsonIgnoreProperties(ignoreUnknown = true)
+   public record MemoryItem(String id, Double score, MemoryValue value) {}
+
+   @JsonIgnoreProperties(ignoreUnknown = true)
+   public record MemoryValue(String content, String statement) {
+      public String text() {
+         if (content != null && !content.isBlank()) return content;
+         if (statement != null && !statement.isBlank()) return statement;
+         return "";
+      }
+   }
+
+   public record MemoryResult(String id, String memory, double score) {}
+
+   // -- Public API ------------------------------------------------------------
+
    private HttpClient http() {
       if (http == null) {
          http = HttpClient.newBuilder()
@@ -49,11 +77,10 @@ public class MemoryServiceClient {
          throw new RuntimeException("Failed to create conversation: " + resp.statusCode() + " " + resp.body());
       }
 
-      @SuppressWarnings("unchecked") Map<String, Object> data = mapper.readValue(resp.body(), Map.class);
-      String convId = (String) data.get("id");
-      conversationIds.put(userId, convId);
-      log.infof("Created conversation %s for user=%s", convId, userId);
-      return convId;
+      ConversationResponse conversation = mapper.readValue(resp.body(), ConversationResponse.class);
+      conversationIds.put(userId, conversation.id());
+      log.infof("Created conversation %s for user=%s", conversation.id(), userId);
+      return conversation.id();
    }
 
    public void appendEntry(String userId, String conversationId, String role, String text) throws Exception {
@@ -64,9 +91,6 @@ public class MemoryServiceClient {
       if (resp.statusCode() >= 300) {
          throw new RuntimeException("Failed to append entry: " + resp.statusCode() + " " + resp.body());
       }
-   }
-
-   public record MemoryResult(String id, String memory, double score) {
    }
 
    public List<MemoryResult> searchMemories(String userId, String query, int topK) throws Exception {
@@ -85,20 +109,15 @@ public class MemoryServiceClient {
          return List.of();
       }
 
-      @SuppressWarnings("unchecked") Map<String, Object> data = mapper.readValue(resp.body(), Map.class);
-      @SuppressWarnings("unchecked") List<Map<String, Object>> items = (List<Map<String, Object>>) data.getOrDefault("items", List.of());
+      SearchResponse search = mapper.readValue(resp.body(), SearchResponse.class);
 
       List<MemoryResult> results = new ArrayList<>();
-      for (Map<String, Object> item : items) {
-         String id = (String) item.getOrDefault("id", "");
-         double score = item.get("score") instanceof Number n ? n.doubleValue() : 0.0;
-
-         @SuppressWarnings("unchecked")
-         Map<String, String> value = item.get("value") instanceof Map ? (Map<String, String>) item.get("value") : Map.of();
-         String memoryText = value.getOrDefault("content", value.getOrDefault("statement", ""));
-
-         if (memoryText != null && !memoryText.isBlank()) {
-            results.add(new MemoryResult(id, memoryText, score));
+      for (MemoryItem item : search.items()) {
+         if (item.value() == null) continue;
+         String memoryText = item.value().text();
+         if (!memoryText.isEmpty()) {
+            double score = item.score() != null ? item.score() : 0.0;
+            results.add(new MemoryResult(item.id(), memoryText, score));
          }
       }
 
@@ -144,6 +163,8 @@ public class MemoryServiceClient {
               userId, cognition.waitTimeoutSeconds(), lastCount);
       return lastCount;
    }
+
+   // -- HTTP ------------------------------------------------------------------
 
    private HttpResponse<String> post(String userId, String path, Map<String, Object> body) throws Exception {
       String json = mapper.writeValueAsString(body);
