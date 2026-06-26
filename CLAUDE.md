@@ -4,7 +4,7 @@ Quarkus CLI app that benchmarks the memory-service + cognition processor pipelin
 
 ## Supported Benchmarks
 
-- **LoCoMo** (ACL 2024): 10 multi-session conversations, ~200 QA pairs, 5 categories
+- **LoCoMo** (ACL 2024): 10 multi-session conversations, ~2,000 QA pairs, 5 categories
 - **LongMemEval** (ICLR 2025): 500 independent questions, 6 types, each with its own conversation history
 - **BEAM** (ICLR 2026): 100 conversations at 4 size tiers (100K–10M tokens), 20 questions each, 10 ability types, rubric-based nugget scoring (~53 sessions)
 

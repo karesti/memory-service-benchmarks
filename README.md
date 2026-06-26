@@ -4,7 +4,7 @@ Benchmark harness for evaluating the memory-service cognition pipeline using ind
 
 ## Supported Benchmarks
 
-- **LoCoMo** (ACL 2024): 10 multi-session conversations, ~200 QA pairs, 5 categories
+- **LoCoMo** (ACL 2024): 10 multi-session conversations, ~2,000 QA pairs, 5 categories
 - **LongMemEval** (ICLR 2025): 500 independent questions, 6 types, each with its own conversation history
 - **BEAM** (ICLR 2026): 100 conversations at 4 size tiers (100K–10M tokens), 20 questions each, 10 ability types, rubric-based nugget scoring
 
@@ -237,7 +237,7 @@ Dataset (LoCoMo / LongMemEval / BEAM)
 
 ### LoCoMo (ACL 2024) — "Can you remember what friends talked about?"
 
-Two friends chatting over months across 10 long conversations, ~200 questions. Tests basic memory: can you recall facts, dates, causes, and connect information across sessions? Small and fast — good for quick iteration.
+Two friends chatting over months across 10 long conversations, ~1,500 questions (after excluding adversarial). Tests basic memory: can you recall facts, dates, causes, and connect information across sessions? Small and fast — good for quick iteration.
 
 5 categories:
 
