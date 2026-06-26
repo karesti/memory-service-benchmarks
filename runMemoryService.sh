@@ -1,0 +1,7 @@
+export MAVEN_OPTS="-Xmx8g"
+MEMORY_SERVICE_OPENAI_API_KEY=$OPENAI_API_KEY \
+  MEMORY_SERVICE_ROLES_ADMIN_CLIENTS="admin,turn_traces_processor,cognition_processor" \
+  MEMORY_SERVICE_ROLES_INDEXER_CLIENTS="agent,cognition_processor" \
+  MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR=cognition-processor-key-123 \
+  MEMORY_SERVICE_AIR_FULL_BIN="./bin/memory-service serve" \
+  task dev:memory-service
