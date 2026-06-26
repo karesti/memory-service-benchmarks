@@ -12,6 +12,8 @@ public class MetricsReport {
             double overallAccuracy,
             int totalQuestions,
             int totalCorrect,
+            double avgF1,
+            double avgBleu,
             double avgSearchLatencyMs,
             double avgMemoriesRetrieved,
             List<CategoryMetrics> byCategory
@@ -19,10 +21,13 @@ public class MetricsReport {
 
     public static Summary compute(String benchmarkName, List<BenchmarkResult> results) {
         if (results.isEmpty()) {
-            return new Summary(benchmarkName, 0, 0, 0, 0, 0, List.of());
+            return new Summary(benchmarkName, 0, 0, 0, 0, 0, 0, 0, List.of());
         }
 
-        int totalCorrect = (int) results.stream().filter(BenchmarkResult::isCorrect).count();
+        double totalScore = results.stream().mapToDouble(BenchmarkResult::score).sum();
+        int totalCorrect = (int) Math.round(totalScore);
+        double avgF1 = results.stream().mapToDouble(BenchmarkResult::f1).average().orElse(0);
+        double avgBleu = results.stream().mapToDouble(BenchmarkResult::bleu).average().orElse(0);
         double avgLatency = results.stream().mapToDouble(BenchmarkResult::searchLatencyMs).average().orElse(0);
         double avgMemories = results.stream().mapToDouble(BenchmarkResult::memoriesRetrieved).average().orElse(0);
 
@@ -33,21 +38,24 @@ public class MetricsReport {
                 .sorted(Map.Entry.comparingByKey())
                 .map(e -> {
                     List<BenchmarkResult> catResults = e.getValue();
-                    int catCorrect = (int) catResults.stream().filter(BenchmarkResult::isCorrect).count();
+                    double catScore = catResults.stream().mapToDouble(BenchmarkResult::score).sum();
+                    int catCorrect = (int) Math.round(catScore);
                     return new CategoryMetrics(
                             e.getKey(),
                             catResults.size(),
                             catCorrect,
-                            catResults.isEmpty() ? 0 : (double) catCorrect / catResults.size()
+                            catResults.isEmpty() ? 0 : catScore / catResults.size()
                     );
                 })
                 .toList();
 
         return new Summary(
                 benchmarkName,
-                (double) totalCorrect / results.size(),
+                totalScore / results.size(),
                 results.size(),
                 totalCorrect,
+                avgF1,
+                avgBleu,
                 avgLatency,
                 avgMemories,
                 categoryMetrics
@@ -62,9 +70,11 @@ public class MetricsReport {
                 s.benchmarkName(), pad(60 - 25 - s.benchmarkName().length())));
         sb.append("├─────────────────────────────────────────────────────────────┤\n");
         sb.append("│                                                             │\n");
-        sb.append(String.format("│  Overall Accuracy:   %5.1f%%  (%d / %d questions)%s│\n",
+        sb.append(String.format("│  LLM Judge Accuracy: %5.1f%%  (%d / %d questions)%s│\n",
                 s.overallAccuracy() * 100, s.totalCorrect(), s.totalQuestions(),
                 pad(43 - digits(s.totalCorrect()) - digits(s.totalQuestions()))));
+        sb.append(String.format("│  F1 Score:           %5.1f%%                                  │\n", s.avgF1() * 100));
+        sb.append(String.format("│  BLEU Score:         %5.1f%%                                  │\n", s.avgBleu() * 100));
         sb.append("│                                                             │\n");
         sb.append("├─────────────────────────────────────────────────────────────┤\n");
         sb.append("│  Category Breakdown                                        │\n");

@@ -26,6 +26,8 @@ public interface BenchmarkConfig {
 
     LongMemEval longmemeval();
 
+    Beam beam();
+
     interface Cognition {
 
         @WithDefault("true")
@@ -62,5 +64,17 @@ public interface BenchmarkConfig {
         int seed();
 
         Optional<String> questionTypes();
+    }
+
+    interface Beam {
+
+        @WithDefault("datasets/beam")
+        String datasetDir();
+
+        @WithDefault("100K")
+        String chatSizes();
+
+        @WithDefault("2")
+        int maxChats();
     }
 }

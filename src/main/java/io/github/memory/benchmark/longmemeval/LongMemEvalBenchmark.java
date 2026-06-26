@@ -9,6 +9,7 @@ import io.github.memory.benchmark.LlmAnswerGenerator;
 import io.github.memory.benchmark.LlmJudge;
 import io.github.memory.benchmark.MemoryServiceClient;
 import io.github.memory.benchmark.MetricsReport;
+import io.github.memory.benchmark.TextMetrics;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 import picocli.CommandLine;
@@ -186,11 +187,14 @@ public class LongMemEvalBenchmark implements Runnable {
             reason = "Judge parsing failed: " + e.getMessage();
         }
 
+        double score = "CORRECT".equalsIgnoreCase(verdict) ? 1.0 : 0.0;
+        TextMetrics.Scores textScores = TextMetrics.compute(question.answer(), generatedAnswer);
+
         return new BenchmarkResult(
                 question.questionId(), "longmemeval", question.questionType(),
                 question.question(), question.answer(), generatedAnswer,
-                verdict, reason, searchLatencyMs,
-                memories.size(), topMemoryTexts
+                verdict, reason, score, textScores.f1(), textScores.bleu(),
+                searchLatencyMs, memories.size(), topMemoryTexts
         );
     }
 

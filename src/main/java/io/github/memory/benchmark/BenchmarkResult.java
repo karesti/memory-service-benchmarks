@@ -11,6 +11,9 @@ public record BenchmarkResult(
         String generatedAnswer,
         String verdict,
         String reason,
+        double score,
+        double f1,
+        double bleu,
         double searchLatencyMs,
         int memoriesRetrieved,
         List<String> topMemories

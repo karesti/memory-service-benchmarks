@@ -5,20 +5,25 @@ Quarkus CLI app that benchmarks the memory-service + cognition processor pipelin
 ## Supported Benchmarks
 
 - **LoCoMo** (ACL 2024): 10 multi-session conversations, ~200 QA pairs, 5 categories
-- **LongMemEval** (ICLR 2025): 500 independent questions, 6 types, each with its own conversation history (~53 sessions)
+- **LongMemEval** (ICLR 2025): 500 independent questions, 6 types, each with its own conversation history
+- **BEAM** (ICLR 2026): 100 conversations at 4 size tiers (100K–10M tokens), 20 questions each, 10 ability types, rubric-based nugget scoring (~53 sessions)
 
 ## Project structure
 
 ```
 src/main/java/io/github/memory/benchmark/
-├── BenchmarkCommand.java       # @TopCommand — picocli dispatcher (locomo | longmemeval)
+├── BenchmarkCommand.java       # @TopCommand — picocli dispatcher (locomo | longmemeval | beam)
 ├── BenchmarkConfig.java        # @ConfigMapping for benchmark.* properties
 ├── MemoryServiceConfig.java    # @ConfigMapping for memory-service.* properties
 ├── MemoryServiceClient.java    # REST client: create conversations, append entries, search memories, wait for cognition
 ├── LlmAnswerGenerator.java     # LangChain4j @RegisterAiService — generates answers from retrieved memories
 ├── LlmJudge.java               # LangChain4j @RegisterAiService — judges answer correctness (CORRECT/WRONG)
+├── LlmNuggetJudge.java         # LangChain4j @RegisterAiService — BEAM rubric nugget scoring (0/0.5/1.0)
 ├── BenchmarkResult.java        # Per-question result record (shared across benchmarks)
 ├── MetricsReport.java          # Accuracy computation and formatting (per-category breakdown)
+├── beam/
+│   ├── BeamBenchmark.java      # beam subcommand — per-chat ingest → search → answer → rubric judge
+│   └── BeamDataset.java        # Parses local BEAM files (chat.json + probing_questions.json)
 ├── locomo/
 │   ├── LoCoMoBenchmark.java    # locomo subcommand — ingest → wait → search → answer → judge
 │   └── LoCoMoDataset.java      # Parses locomo10.json
@@ -81,6 +86,7 @@ java -Xmx2g -Dbenchmark.cognition.enabled=false -jar target/quarkus-app/quarkus-
 - **memory-service-rest-quarkus**: Maven dependency (999-SNAPSHOT) — installed in local Maven repo
 - **LoCoMo dataset**: Symlinked from `../locomo/data/locomo10.json`
 - **LongMemEval dataset**: Symlinked from `../LongMemEval/data/longmemeval_s_cleaned.json`
+- **BEAM dataset**: Symlinked from `../BEAM/chats/`
 
 ## Gotchas
 

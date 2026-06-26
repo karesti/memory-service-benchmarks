@@ -6,6 +6,7 @@ Benchmark harness for evaluating the memory-service cognition pipeline using ind
 
 - **LoCoMo** (ACL 2024): 10 multi-session conversations, ~200 QA pairs, 5 categories
 - **LongMemEval** (ICLR 2025): 500 independent questions, 6 types, each with its own conversation history
+- **BEAM** (ICLR 2026): 100 conversations at 4 size tiers (100K–10M tokens), 20 questions each, 10 ability types, rubric-based nugget scoring
 
 ## Prerequisites
 
@@ -112,6 +113,25 @@ java -Xmx2g -Dbenchmark.longmemeval.question-types=temporal-reasoning,multi-sess
 java -Xmx2g -Dbenchmark.cognition.enabled=false -jar target/quarkus-app/quarkus-run.jar longmemeval
 ```
 
+### BEAM
+
+```bash
+# Quick smoke test (1 chat from 100K tier, 20 questions)
+java -Xmx2g -Dbenchmark.beam.max-chats=1 -jar target/quarkus-app/quarkus-run.jar beam
+
+# Default (2 chats from 100K, 40 questions)
+java -Xmx2g -jar target/quarkus-app/quarkus-run.jar beam
+
+# All 100K chats (20 chats, 400 questions)
+java -Xmx2g -Dbenchmark.beam.max-chats=0 -jar target/quarkus-app/quarkus-run.jar beam
+
+# Larger size tiers
+java -Xmx4g -Dbenchmark.beam.chat-sizes=100K,500K -jar target/quarkus-app/quarkus-run.jar beam
+
+# Without cognition
+java -Xmx2g -Dbenchmark.cognition.enabled=false -jar target/quarkus-app/quarkus-run.jar beam
+```
+
 ### Clean run (reset database)
 
 To start fresh between runs:
@@ -132,6 +152,7 @@ Results are written to `results/` as JSON:
 results/locomo_cognition_2026-06-25T08-27-19.json
 results/locomo_substrate_2026-06-25T08-30-00.json
 results/longmemeval_cognition_2026-06-25T10-15-00.json
+results/beam_cognition_2026-06-26T15-00-00.json
 ```
 
 ## Configuration
@@ -157,6 +178,14 @@ All settings in `src/main/resources/application.properties`:
 | `benchmark.dataset` | `datasets/locomo10.json` | Path to LoCoMo dataset |
 | `benchmark.conversations` | `0,1,2,3,4,5,6,7,8,9` | Which conversations to run |
 
+**BEAM-specific:**
+
+| Property | Default | Description |
+|---|---|---|
+| `benchmark.beam.dataset-dir` | `datasets/beam` | Path to BEAM chats directory |
+| `benchmark.beam.chat-sizes` | `100K` | Comma-separated size tiers (100K, 500K, 1M, 10M) |
+| `benchmark.beam.max-chats` | `2` | Max chats per size tier (0 = all) |
+
 **LongMemEval-specific:**
 
 | Property | Default | Description |
@@ -175,7 +204,7 @@ java -Xmx2g -Dbenchmark.top-k=20 -jar target/quarkus-app/quarkus-run.jar locomo
 ## Architecture
 
 ```
-Dataset (LoCoMo / LongMemEval)
+Dataset (LoCoMo / LongMemEval / BEAM)
         │
         ▼
 ┌──────────────────────────┐
@@ -194,9 +223,11 @@ Dataset (LoCoMo / LongMemEval)
 
 ## What the benchmarks test
 
-### LoCoMo (ACL 2024)
+### LoCoMo (ACL 2024) — "Can you remember what friends talked about?"
 
-10 multi-session conversations with ~200 QA pairs across 5 categories:
+Two friends chatting over months across 10 long conversations, ~200 questions. Tests basic memory: can you recall facts, dates, causes, and connect information across sessions? Small and fast — good for quick iteration.
+
+5 categories:
 
 | Category | Tests |
 |---|---|
@@ -206,9 +237,11 @@ Dataset (LoCoMo / LongMemEval)
 | Factual | Direct fact recall |
 | Adversarial | Questions about things never discussed (skipped) |
 
-### LongMemEval (ICLR 2025)
+### LongMemEval (ICLR 2025) — "Can you remember what each user told you?"
 
-500 questions across 6 types, each with its own conversation history (~53 sessions):
+500 different users, each with months of chat history (~53 sessions per user). Tests the same skills as LoCoMo but at much bigger scale, plus tracks when facts get updated. Each question is independent — no information leaks between users.
+
+6 question types:
 
 | Question Type | Tests |
 |---|---|
@@ -218,3 +251,20 @@ Dataset (LoCoMo / LongMemEval)
 | temporal-reasoning | Time-based reasoning across sessions |
 | knowledge-update | Updated facts that override earlier ones |
 | multi-session | Connecting information across multiple sessions |
+
+### BEAM (ICLR 2026) — "Can you handle massive conversations across many topics?"
+
+100 conversations ranging from 100K to 10 million tokens, covering coding, math, health, finance, and personal topics. The hardest of the three — tests 10 different memory abilities with a more detailed scoring system (partial credit via rubric nuggets instead of just right/wrong).
+
+| Question Type | Tests |
+|---|---|
+| abstention | Withholding answers when evidence is absent |
+| contradiction_resolution | Detecting and reconciling inconsistent statements |
+| event_ordering | Reconstructing chronological sequences |
+| information_extraction | Recalling entities, dates, numbers, facts |
+| instruction_following | Sustained adherence to user constraints |
+| knowledge_update | Revising stored facts with new information |
+| multi_session_reasoning | Integrating evidence across non-adjacent segments |
+| preference_following | Adapting to evolving user preferences |
+| summarization | Abstracting and compressing dialogue content |
+| temporal_reasoning | Reasoning about time relations and durations |
