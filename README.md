@@ -1,12 +1,20 @@
 # Memory Service Benchmarks
 
-Benchmark harness for evaluating the memory-service cognition pipeline using industry-standard datasets.
+Benchmark harness for evaluating the memory-service cognition pipeline using industry-standard academic datasets.
 
 ## Supported Benchmarks
 
-- **LoCoMo** (ACL 2024): 10 multi-session conversations, ~2,000 QA pairs, 5 categories
-- **LongMemEval** (ICLR 2025): 500 independent questions, 6 types, each with its own conversation history
-- **BEAM** (ICLR 2026): 100 conversations at 4 size tiers (100K–10M tokens), 20 questions each, 10 ability types, rubric-based nugget scoring
+**LoCoMo** — "Can you remember what friends talked about?"
+Two friends chatting over months across 10 long conversations, ~1,540 questions. Tests basic memory: can you recall facts, dates, causes, and connect information across sessions? Small and fast — good for quick iteration.
+Published at ACL 2024 by University of Massachusetts. [Paper](https://arxiv.org/abs/2402.18157) | [Dataset](https://github.com/snap-stanford/LoCoMo)
+
+**LongMemEval** — "Can you remember what each user told you?"
+500 different users, each with months of chat history (~53 sessions per user). Tests the same skills as LoCoMo but at much bigger scale, plus tracks when facts get updated and when the system should abstain. Each question is independent — no information leaks between users.
+Published at ICLR 2025 by UCLA. [Paper](https://arxiv.org/abs/2410.10813) | [Dataset](https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned)
+
+**BEAM** — "Can you handle massive conversations across many topics?"
+100 conversations ranging from 100K to 10 million tokens, covering coding, math, health, finance, and personal topics. The hardest of the three — tests 10 different memory abilities with a more detailed scoring system (partial credit via rubric nuggets instead of just right/wrong).
+Published at ICLR 2026. [Paper](https://arxiv.org/abs/2510.27246) | [Dataset](https://huggingface.co/datasets/Mohammadta/BEAM)
 
 ## Prerequisites
 
