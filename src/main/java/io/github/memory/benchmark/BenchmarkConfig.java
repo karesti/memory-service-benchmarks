@@ -3,6 +3,8 @@ package io.github.memory.benchmark;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
+import java.util.Optional;
+
 @ConfigMapping(prefix = "benchmark")
 public interface BenchmarkConfig {
 
@@ -59,7 +61,6 @@ public interface BenchmarkConfig {
         @WithDefault("42")
         int seed();
 
-        @WithDefault("")
-        String questionTypes();
+        Optional<String> questionTypes();
     }
 }

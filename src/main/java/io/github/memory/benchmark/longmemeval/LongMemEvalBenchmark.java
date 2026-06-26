@@ -54,13 +54,15 @@ public class LongMemEvalBenchmark implements Runnable {
         log.infof("Loaded %d questions", allQuestions.size());
 
         // Filter by question types if specified
-        String typesFilter = lmeConfig.questionTypes();
-        if (typesFilter != null && !typesFilter.isBlank()) {
-            Set<String> types = Arrays.stream(typesFilter.split(","))
+        if (lmeConfig.questionTypes().isPresent()) {
+            Set<String> types = Arrays.stream(lmeConfig.questionTypes().get().split(","))
                     .map(String::strip)
+                    .filter(s -> !s.isEmpty())
                     .collect(Collectors.toSet());
-            allQuestions = LongMemEvalDataset.filterByTypes(allQuestions, types);
-            log.infof("Filtered to %d questions of types: %s", allQuestions.size(), types);
+            if (!types.isEmpty()) {
+                allQuestions = LongMemEvalDataset.filterByTypes(allQuestions, types);
+                log.infof("Filtered to %d questions of types: %s", allQuestions.size(), types);
+            }
         }
 
         // Sample questions
