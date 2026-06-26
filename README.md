@@ -155,6 +155,18 @@ results/longmemeval_cognition_2026-06-25T10-15-00.json
 results/beam_cognition_2026-06-26T15-00-00.json
 ```
 
+## Metrics
+
+Each benchmark reports three scoring metrics per question, matching the evaluation framework used by industry benchmarks (e.g., Mem0):
+
+| Metric | What it measures | How it works |
+|---|---|---|
+| **LLM Judge** | Semantic correctness | An LLM compares the answer to ground truth by meaning. "NYC" = "New York City". Most accurate but costs an LLM call per question. |
+| **F1 Score** | Word overlap | Measures precision and recall of word overlap between answer and ground truth. Better than BLEU but still purely word-based. |
+| **BLEU Score** | N-gram precision | Counts how many word sequences match exactly. Originally designed for machine translation. Cheapest but most rigid. |
+
+For BEAM, the LLM Judge uses **rubric-based nugget scoring** (0/0.5/1.0 per criterion) instead of binary CORRECT/WRONG, giving partial credit for partially correct answers.
+
 ## Configuration
 
 All settings in `src/main/resources/application.properties`:
