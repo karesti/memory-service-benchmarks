@@ -189,12 +189,13 @@ public class BeamBenchmark implements Runnable {
         }
 
         String verdict = score >= 0.5 ? "CORRECT" : "WRONG";
+        TextMetrics.Scores textScores = TextMetrics.compute(pq.answer(), generatedAnswer);
 
         return new BenchmarkResult(
                 questionId, "beam", pq.questionType(),
                 pq.question(), pq.answer(), generatedAnswer,
-                verdict, reasons.toString(), score, searchLatencyMs,
-                memories.size(), topMemoryTexts
+                verdict, reasons.toString(), score, textScores.f1(), textScores.bleu(),
+                searchLatencyMs, memories.size(), topMemoryTexts
         );
     }
 
