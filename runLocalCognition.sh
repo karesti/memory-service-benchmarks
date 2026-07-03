@@ -3,8 +3,8 @@ cd ..
 cd cognitive-memory/cognition-processor-quarkus
 MEMORY_SERVICE_API_KEY=cognition-processor-key-123 \
   MEMORY_MODEL_PROVIDER=openai \
-  MEMORY_MODEL_ID=gpt-4o-mini \
+  MEMORY_MODEL_ID=gpt-5.5 \
   OPENAI_BASE_URL=https://api.openai.com/v1 \
-  OPENAI_MODEL_NAME=gpt-4o-mini \
+  OPENAI_MODEL_NAME=gpt-5.5 \
   OPENAI_API_KEY=$OPENAI_API_KEY \
   ./mvnw quarkus:dev

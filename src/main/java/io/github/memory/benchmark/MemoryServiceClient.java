@@ -96,7 +96,7 @@ public class MemoryServiceClient {
       Map<String, Object> body = Map.of(
               "namespace_prefix", List.of("user", userId, benchmarkConfig.cognition().namespace()),
               "query", query,
-              "limit", Math.min(topK, 100));
+              "limit", topK);
 
       HttpResponse<String> resp = post(userId, "/v1/memories/search", body);
       if (resp.statusCode() == 501) {
