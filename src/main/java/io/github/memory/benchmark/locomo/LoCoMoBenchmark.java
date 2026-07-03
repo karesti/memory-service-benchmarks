@@ -111,9 +111,13 @@ public class LoCoMoBenchmark implements Runnable {
 
         int entryCount = 0;
         for (LoCoMoDataset.Session session : conv.sessions()) {
+            String sessionDate = session.dateTime();
             for (LoCoMoDataset.Turn turn : session.turns()) {
                 String role = turn.speaker().equals(conv.speakerA()) ? "USER" : "AI";
                 String text = turn.speaker() + ": " + turn.text();
+                if (sessionDate != null && !sessionDate.isBlank()) {
+                    text = "[" + sessionDate + "] " + text;
+                }
                 memoryService.appendEntry(userId, convId, role, text);
                 entryCount++;
             }

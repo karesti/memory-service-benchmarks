@@ -6,4 +6,5 @@ MEMORY_SERVICE_API_KEY=cognition-processor-key-123 \
   MEMORY_MODEL_ID=gpt-4o-mini \
   OPENAI_BASE_URL=https://api.openai.com/v1 \
   OPENAI_MODEL_NAME=gpt-4o-mini \
+  OPENAI_API_KEY=$OPENAI_API_KEY \
   ./mvnw quarkus:dev

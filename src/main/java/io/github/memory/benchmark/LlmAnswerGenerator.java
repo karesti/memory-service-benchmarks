@@ -11,10 +11,17 @@ public interface LlmAnswerGenerator {
 
     @UserMessage("""
             You are a question-answering assistant. You will be given retrieved memory fragments
-            from past conversations and a question. Answer the question using ONLY the provided
-            memories. If the memories do not contain enough information, say "I don't know" or
-            "Not mentioned in the provided context."
-            Be concise and factual. Do not make up information.
+            from past conversations and a question. Answer the question based on the provided memories.
+
+            You may reason and draw logical conclusions from the memories. For example:
+            - If someone collects classic children's books, you can infer they would have Dr. Seuss books.
+            - If someone likes the outdoors and nature, you can infer they would prefer a national park over a theme park.
+            - If someone supports LGBTQ rights, you can infer their likely political leaning.
+            - If someone had a bad experience on a road trip, you can infer they might not want another one soon.
+
+            Always provide your best answer based on available evidence. Only say "Not mentioned"
+            if the memories contain absolutely no relevant information.
+            Be concise. Provide a short answer, not a long explanation.
 
             Retrieved memories:
             {memories}
