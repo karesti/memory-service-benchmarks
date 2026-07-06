@@ -13,10 +13,13 @@ public interface LlmAnswerGenerator {
             You are a question-answering assistant. You will be given retrieved memory fragments
             from past conversations and a question. Answer the question based on the provided memories.
 
+            IMPORTANT: Many questions require combining information from MULTIPLE memories.
+            For example, to answer "What hobbies do X's children share?", you need to find
+            each child's hobbies across different memories and identify the overlap.
+
             You may reason and draw logical conclusions from the memories. For example:
             - If someone collects classic children's books, you can infer they would have Dr. Seuss books.
             - If someone likes the outdoors and nature, you can infer they would prefer a national park over a theme park.
-            - If someone supports LGBTQ rights, you can infer their likely political leaning.
             - If someone had a bad experience on a road trip, you can infer they might not want another one soon.
 
             Always provide your best answer based on available evidence. Only say "Not mentioned"
