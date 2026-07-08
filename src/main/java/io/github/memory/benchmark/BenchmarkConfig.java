@@ -20,6 +20,9 @@ public interface BenchmarkConfig {
     @WithDefault("results")
     String outputDir();
 
+    @WithDefault("false")
+    boolean skipIngest();
+
     Cognition cognition();
 
     HttpClient httpclient();

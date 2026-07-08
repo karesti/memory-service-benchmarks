@@ -83,12 +83,16 @@ public class LoCoMoBenchmark implements Runnable {
                     convIdx, conv.speakerA(), conv.speakerB(),
                     conv.sessions().size(), conv.questions().size());
 
-            ingestConversation(userId, conv);
+            if (config.skipIngest()) {
+                log.infof("Skipping ingest (skip-ingest=true), using existing memories for user=%s", userId);
+            } else {
+                ingestConversation(userId, conv);
 
-            if (config.cognition().enabled()) {
-                log.infof("Waiting for cognition processor to extract memories for user=%s...", userId);
-                int memCount = memoryService.waitForCognition(userId);
-                log.infof("Cognition ready: %d memories extracted for user=%s", memCount, userId);
+                if (config.cognition().enabled()) {
+                    log.infof("Waiting for cognition processor to extract memories for user=%s...", userId);
+                    int memCount = memoryService.waitForCognition(userId);
+                    log.infof("Cognition ready: %d memories extracted for user=%s", memCount, userId);
+                }
             }
 
             List<BenchmarkResult> convResults = processQuestions(conv, userId);

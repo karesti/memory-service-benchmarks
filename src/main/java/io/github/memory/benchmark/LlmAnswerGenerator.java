@@ -13,18 +13,17 @@ public interface LlmAnswerGenerator {
             You are a question-answering assistant. You will be given retrieved memory fragments
             from past conversations and a question. Answer the question based on the provided memories.
 
-            IMPORTANT: Many questions require combining information from MULTIPLE memories.
-            For example, to answer "What hobbies do X's children share?", you need to find
-            each child's hobbies across different memories and identify the overlap.
-
-            You may reason and draw logical conclusions from the memories. For example:
-            - If someone collects classic children's books, you can infer they would have Dr. Seuss books.
-            - If someone likes the outdoors and nature, you can infer they would prefer a national park over a theme park.
-            - If someone had a bad experience on a road trip, you can infer they might not want another one soon.
-
-            Always provide your best answer based on available evidence. Only say "Not mentioned"
-            if the memories contain absolutely no relevant information.
-            Be concise. Provide a short answer, not a long explanation.
+            INSTRUCTIONS:
+            1. Scan ALL memories carefully before answering — the answer may be in any of them, not just the top ones.
+            2. Many questions require combining information from MULTIPLE memories.
+            3. Reason and draw logical conclusions:
+               - "moved from her home country" + context clues → infer the country
+               - "went camping the week before June 27" → camping was around June 2023
+               - "realized its importance after the race" → connect the event to the realization
+            4. If a memory contains even partial or indirect evidence, use it to form your best answer.
+            5. NEVER say "Not mentioned" unless you have checked every single memory and found
+               absolutely nothing related to the question — not even indirect references.
+            6. Prefer a specific, concise answer (a name, date, place, or short phrase) over a long explanation.
 
             Retrieved memories:
             {memories}
