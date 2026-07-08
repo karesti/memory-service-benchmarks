@@ -20,73 +20,61 @@ Published at ICLR 2026. [Paper](https://arxiv.org/abs/2510.27246) | [Dataset](ht
 
 - Java 21+
 - Docker and Docker Compose
-- [Task](https://taskfile.dev/) (`brew install go-task`)
-- [air](https://github.com/air-verse/air) (`go install github.com/air-verse/air@latest` — ensure `~/go/bin` is in PATH)
 - An OpenAI API key (for embeddings, cognition extraction, and the benchmark LLM judge)
 
 ## Setup (one time)
 
-### 1. Configure the memory-service for cognition
-
-From the `memory-service/` directory:
-
-```bash
-cd ../memory-service
-cp ../cognitive-memory/memory-service/compose.override.yaml.example ./compose.override.yaml
-```
-
-### 2. Install the memory-service REST client
-
-```bash
-cd ../memory-service
-./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus -am install -DskipTests
-```
-
-### 3. Set your OpenAI API key
+### 1. Set your OpenAI API key
 
 Add to your `~/.zshrc`:
 
 ```bash
 export OPENAI_API_KEY=sk-...
-export PATH=$PATH:$HOME/go/bin
 ```
 
 Then `source ~/.zshrc`.
 
-### 4. Build the benchmark
+### 2. Build the benchmark
 
 ```bash
 cd memory-service-benchmarks
 ./mvnw clean package -DskipTests
 ```
 
+### 3. Download the datasets
+
+The benchmark reads datasets from `./datasets` by default. Download LoCoMo,
+LongMemEval-S, and the default BEAM 100K tier with:
+
+```bash
+scripts/download-datasets.sh
+```
+
+BEAM is published as Parquet files, so the script converts it into the JSON
+chat layout used by this benchmark. To download more BEAM tiers:
+
+```bash
+BEAM_SIZES=100K,500K,1M scripts/download-datasets.sh beam
+```
+
+You can also point at another location with `-Dbenchmark.dataset=/path/to/locomo10.json`,
+`-Dbenchmark.longmemeval.dataset=/path/to/longmemeval_s_cleaned.json`, or
+`-Dbenchmark.beam.dataset-dir=/path/to/BEAM/chats`.
+
 ## Running the benchmarks
 
 ### Start the services
 
-**Terminal 1 — Memory service:**
-
 ```bash
+cd ..
+git clone https://github.com/chirino/memory-service.git
 cd memory-service
-MEMORY_SERVICE_OPENAI_API_KEY=$OPENAI_API_KEY \
-MEMORY_SERVICE_ROLES_ADMIN_CLIENTS="admin,turn_traces_processor,cognition_processor" \
-MEMORY_SERVICE_ROLES_INDEXER_CLIENTS="agent,cognition_processor" \
-MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR=cognition-processor-key-123 \
-MEMORY_SERVICE_AIR_FULL_BIN="./bin/memory-service serve" \
-task dev:memory-service
+docker compose --profile cognition up -d
 ```
 
-**Terminal 2 — Cognition processor** (skip for no-cognition runs):
-
-```bash
-cd cognitive-memory/cognition-processor-quarkus
-MEMORY_SERVICE_API_KEY=cognition-processor-key-123 \
-MEMORY_MODEL_PROVIDER=openai \
-MEMORY_MODEL_ID=gpt-4o-mini \
-OPENAI_BASE_URL=https://api.openai.com/v1 \
-OPENAI_MODEL_NAME=gpt-4o-mini \
-./mvnw quarkus:dev
-```
+The compose stack exposes memory-service on `http://localhost:8082` and Keycloak on
+`http://localhost:8081`. The benchmark creates Keycloak users on demand using
+the compose admin credentials, then logs in as each benchmark user.
 
 ### LoCoMo
 
@@ -145,12 +133,10 @@ java -Xmx2g -Dbenchmark.cognition.enabled=false -jar target/quarkus-app/quarkus-
 To start fresh between runs:
 
 ```bash
-cd memory-service
+cd ../memory-service
 docker compose down -v
-docker compose up -d qdrant postgres redis keycloak prometheus minio minio-init clickhouse langfuse-worker langfuse-web
+docker compose --profile cognition up -d
 ```
-
-Then restart memory-service and cognition processor.
 
 ## Results
 
@@ -182,7 +168,19 @@ All settings in `src/main/resources/application.properties`:
 | Property | Default | Description |
 |---|---|---|
 | `memory-service.url` | `http://localhost:8082` | Memory service URL |
-| `memory-service.api-key` | `agent-api-key-1` | API key for authentication |
+| `memory-service.api-key` | `agent-api-key-1` | Agent client API key sent with the OIDC bearer token |
+| `memory-service.oidc.enabled` | `true` | Fetch Keycloak access tokens for Memory Service calls |
+| `memory-service.oidc.token-url` | `http://localhost:8081/realms/memory-service/protocol/openid-connect/token` | Keycloak token endpoint |
+| `memory-service.oidc.realm` | `memory-service` | Keycloak realm used for benchmark users |
+| `memory-service.oidc.client-id` | `memory-service-client` | Keycloak client ID |
+| `memory-service.oidc.client-secret` | `change-me` | Keycloak client secret |
+| `memory-service.oidc.user-password` | `benchmark` | Password assigned to auto-provisioned benchmark users |
+| `memory-service.oidc.provision-users` | `true` | Create benchmark users through Keycloak admin APIs before login |
+| `memory-service.oidc.admin.server-url` | `http://localhost:8081` | Keycloak server URL for the admin client |
+| `memory-service.oidc.admin.realm` | `master` | Keycloak realm used to authenticate the admin client |
+| `memory-service.oidc.admin.client-id` | `admin-cli` | Keycloak admin client ID |
+| `memory-service.oidc.admin.username` | `admin` | Keycloak admin username |
+| `memory-service.oidc.admin.password` | `admin` | Keycloak admin password |
 | `benchmark.top-k` | `50` | Max memories to retrieve per question |
 | `benchmark.output-dir` | `results` | Output directory |
 | `benchmark.cognition.enabled` | `true` | Wait for cognition processor |
