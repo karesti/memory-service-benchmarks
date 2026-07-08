@@ -5,13 +5,23 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.core.Response;
 
 import org.jboss.logging.Logger;
+import org.keycloak.admin.client.CreatedResponseUtil;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.KeycloakBuilder;
+import org.keycloak.admin.client.resource.RealmResource;
+import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.RoleRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 
@@ -29,6 +39,9 @@ public class MemoryServiceClient {
 
    private HttpClient http;
    private final Map<String, String> conversationIds = new HashMap<>();
+   private final Map<String, CachedToken> tokenCache = new HashMap<>();
+   private final Set<String> provisionedUsers = new HashSet<>();
+   private Keycloak keycloakAdmin;
 
    // -- Response types --------------------------------------------------------
 
@@ -53,6 +66,9 @@ public class MemoryServiceClient {
    }
 
    public record MemoryResult(String id, String memory, double score) {}
+   @JsonIgnoreProperties(ignoreUnknown = true)
+   private record TokenResponse(String access_token, Long expires_in) {}
+   private record CachedToken(String token, long expiresAtMillis) {}
 
    // -- Public API ------------------------------------------------------------
 
@@ -69,7 +85,13 @@ public class MemoryServiceClient {
       String cached = conversationIds.get(userId);
       if (cached != null) return cached;
 
-      Map<String, Object> body = Map.of("title", title, "metadata", Map.of("benchmark", true, "user_id", userId));
+      String effectiveUserId = effectiveUserId(userId);
+      Map<String, Object> body = Map.of(
+              "title", title,
+              "metadata", Map.of(
+                      "benchmark", true,
+                      "user_id", effectiveUserId,
+                      "benchmark_user_id", userId));
 
       HttpResponse<String> resp = post(userId, "/v1/conversations", body);
       if (resp.statusCode() >= 300) {
@@ -78,7 +100,8 @@ public class MemoryServiceClient {
 
       ConversationResponse conversation = mapper.readValue(resp.body(), ConversationResponse.class);
       conversationIds.put(userId, conversation.id());
-      log.infof("Created conversation %s for user=%s", conversation.id(), userId);
+      log.infof("Created conversation %s for benchmark user=%s (oidc user=%s)",
+              conversation.id(), userId, effectiveUserId);
       return conversation.id();
    }
 
@@ -93,8 +116,9 @@ public class MemoryServiceClient {
    }
 
    public List<MemoryResult> searchMemories(String userId, String query, int topK) throws Exception {
+      String effectiveUserId = effectiveUserId(userId);
       Map<String, Object> body = Map.of(
-              "namespace_prefix", List.of("user", userId, benchmarkConfig.cognition().namespace()),
+              "namespace_prefix", List.of("user", effectiveUserId, benchmarkConfig.cognition().namespace()),
               "query", query,
               "limit", topK);
 
@@ -167,14 +191,203 @@ public class MemoryServiceClient {
 
    private HttpResponse<String> post(String userId, String path, Map<String, Object> body) throws Exception {
       String json = mapper.writeValueAsString(body);
-      HttpRequest request = HttpRequest.newBuilder()
+      HttpRequest.Builder request = HttpRequest.newBuilder()
               .uri(URI.create(serviceConfig.url() + path))
               .header("Content-Type", "application/json")
-              .header("X-API-Key", serviceConfig.apiKey())
-              .header("Authorization", "Bearer " + userId)
+              .header("Authorization", "Bearer " + bearerToken(userId))
               .POST(HttpRequest.BodyPublishers.ofString(json))
-              .timeout(Duration.ofSeconds(60))
+              .timeout(Duration.ofSeconds(60));
+
+      if (serviceConfig.apiKey() != null && !serviceConfig.apiKey().isBlank()) {
+         request.header("X-API-Key", serviceConfig.apiKey());
+      }
+
+      return http().send(request.build(), HttpResponse.BodyHandlers.ofString());
+   }
+
+   private String effectiveUserId(String benchmarkUserId) {
+      return benchmarkUserId;
+   }
+
+   private String bearerToken(String benchmarkUserId) throws Exception {
+      if (!serviceConfig.oidc().enabled()) {
+         return benchmarkUserId;
+      }
+      ensureKeycloakUser(benchmarkUserId);
+
+      CachedToken cached = tokenCache.get(benchmarkUserId);
+      long now = System.currentTimeMillis();
+      if (cached != null && cached.expiresAtMillis() > now) {
+         return cached.token();
+      }
+
+      TokenResponse token = loginUser(benchmarkUserId);
+      if (token.access_token() == null || token.access_token().isBlank()) {
+         throw new RuntimeException("OIDC login did not return an access_token for user " + benchmarkUserId);
+      }
+
+      long expiresInSeconds = token.expires_in() != null ? token.expires_in() : 300;
+      long refreshSkewMillis = Math.max(0, serviceConfig.oidc().refreshSkewSeconds()) * 1000L;
+      long expiresAtMillis = now + (expiresInSeconds * 1000L) - refreshSkewMillis;
+      tokenCache.put(benchmarkUserId, new CachedToken(token.access_token(), expiresAtMillis));
+      log.infof("Logged in to Keycloak as benchmark user=%s", benchmarkUserId);
+      return token.access_token();
+   }
+
+   private TokenResponse loginUser(String userId) throws Exception {
+      var oidc = serviceConfig.oidc();
+      String form = form(
+              "grant_type", "password",
+              "client_id", oidc.clientId(),
+              "client_secret", oidc.clientSecret(),
+              "username", userId,
+              "password", oidc.userPassword());
+
+      HttpRequest request = HttpRequest.newBuilder()
+              .uri(URI.create(oidc.tokenUrl()))
+              .header("Content-Type", "application/x-www-form-urlencoded")
+              .POST(HttpRequest.BodyPublishers.ofString(form))
+              .timeout(Duration.ofSeconds(30))
               .build();
-      return http().send(request, HttpResponse.BodyHandlers.ofString());
+
+      HttpResponse<String> resp = http().send(request, HttpResponse.BodyHandlers.ofString());
+      if (resp.statusCode() >= 300) {
+         throw new RuntimeException("OIDC login failed for user " + userId
+                 + ": " + resp.statusCode() + " " + resp.body());
+      }
+      return mapper.readValue(resp.body(), TokenResponse.class);
+   }
+
+   private void ensureKeycloakUser(String userId) throws Exception {
+      if (!serviceConfig.oidc().provisionUsers() || provisionedUsers.contains(userId)) {
+         return;
+      }
+
+      RealmResource realm = benchmarkRealm();
+      UserRepresentation user = keycloakUser(userId);
+
+      try (Response resp = realm.users().create(user)) {
+         if (resp.getStatus() == 201) {
+            String keycloakUserId = CreatedResponseUtil.getCreatedId(resp);
+            if (keycloakUserId == null || keycloakUserId.isBlank()) {
+               keycloakUserId = findKeycloakUserId(realm, userId);
+            }
+            configureKeycloakUser(realm, userId, keycloakUserId);
+            assignUserRole(realm, userId, keycloakUserId);
+            provisionedUsers.add(userId);
+            log.infof("Provisioned Keycloak user %s", userId);
+            return;
+         }
+
+         if (resp.getStatus() == 409) {
+            provisionedUsers.add(userId);
+            log.debugf("Keycloak user %s already exists", userId);
+            return;
+         }
+
+         throw new RuntimeException("Failed to provision Keycloak user " + userId
+                 + ": " + resp.getStatus() + " " + responseBody(resp));
+      }
+   }
+
+   private RealmResource benchmarkRealm() {
+      return keycloakAdmin().realm(serviceConfig.oidc().realm());
+   }
+
+   private Keycloak keycloakAdmin() {
+      if (keycloakAdmin == null) {
+         var admin = serviceConfig.oidc().admin();
+         keycloakAdmin = KeycloakBuilder.builder()
+                 .serverUrl(admin.serverUrl())
+                 .realm(admin.realm())
+                 .clientId(admin.clientId())
+                 .username(admin.username())
+                 .password(admin.password())
+                 .build();
+      }
+      return keycloakAdmin;
+   }
+
+   private UserRepresentation keycloakUser(String username) {
+      UserRepresentation user = new UserRepresentation();
+      user.setUsername(username);
+      user.setEnabled(true);
+      user.setEmail(emailForUser(username));
+      user.setEmailVerified(true);
+      user.setFirstName("Benchmark");
+      user.setLastName(username);
+      user.setRequiredActions(List.of());
+      user.setCredentials(List.of(passwordCredential()));
+      return user;
+   }
+
+   private CredentialRepresentation passwordCredential() {
+      CredentialRepresentation credential = new CredentialRepresentation();
+      credential.setType(CredentialRepresentation.PASSWORD);
+      credential.setValue(serviceConfig.oidc().userPassword());
+      credential.setTemporary(false);
+      return credential;
+   }
+
+   private String findKeycloakUserId(RealmResource realm, String username) {
+      List<UserRepresentation> users = realm.users().searchByUsername(username, true);
+      if (users.isEmpty()) {
+         throw new RuntimeException("Keycloak user " + username + " was not found after provisioning");
+      }
+      return users.getFirst().getId();
+   }
+
+   private void configureKeycloakUser(RealmResource realm, String username, String userId) {
+      if (userId == null || userId.isBlank()) {
+         throw new RuntimeException("Cannot configure Keycloak user " + username + ": missing user id");
+      }
+
+      realm.users().get(userId).update(keycloakUser(username));
+      realm.users().get(userId).resetPassword(passwordCredential());
+   }
+
+   private void assignUserRole(RealmResource realm, String username, String userId) {
+      if (userId == null || userId.isBlank()) {
+         log.warnf("Could not assign Keycloak 'user' role to %s: missing user id", username);
+         return;
+      }
+
+      try {
+         RoleRepresentation role = realm.roles().get("user").toRepresentation();
+         realm.users().get(userId).roles().realmLevel().add(List.of(role));
+      } catch (RuntimeException e) {
+         log.warnf("Could not assign Keycloak 'user' role to %s: %s", username, e.getMessage());
+      }
+   }
+
+   private static String responseBody(Response response) {
+      try {
+         return response.hasEntity() ? response.readEntity(String.class) : "";
+      } catch (RuntimeException e) {
+         return "";
+      }
+   }
+
+   private static String emailForUser(String username) {
+      String localPart = username.replaceAll("[^A-Za-z0-9._%+-]", "_");
+      if (localPart.isBlank()) {
+         localPart = "benchmark";
+      }
+      return localPart + "@benchmark.local";
+   }
+
+   private static String form(String... pairs) {
+      if (pairs.length % 2 != 0) {
+         throw new IllegalArgumentException("form pairs must be key/value pairs");
+      }
+      List<String> fields = new ArrayList<>();
+      for (int i = 0; i < pairs.length; i += 2) {
+         fields.add(urlEncode(pairs[i]) + "=" + urlEncode(pairs[i + 1]));
+      }
+      return String.join("&", fields);
+   }
+
+   private static String urlEncode(String value) {
+      return URLEncoder.encode(value, StandardCharsets.UTF_8);
    }
 }
