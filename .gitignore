@@ -1,5 +1,8 @@
 target/
 results/
+datasets/*
+!datasets/.gitkeep
+.dataset-tools/
 *.log
 .env
 .idea/
