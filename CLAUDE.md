@@ -53,7 +53,7 @@ src/main/java/io/github/memory/benchmark/
 - **CLI**: Picocli subcommands — `locomo` and `longmemeval`
 - **LLM services**: `@RegisterAiService` with `NoChatMemoryProviderSupplier` and `@V` annotations
 - **HTTP client**: `java.net.http.HttpClient` for memory-service calls
-- **Auth**: `X-API-Key` for client identity + `Authorization: Bearer {userId}` for user scoping
+- **Auth**: `X-API-Key` for agent client identity + Keycloak `Authorization: Bearer <access_token>`; benchmark users are created on demand through Keycloak admin APIs
 
 ## Build and run
 
@@ -83,10 +83,8 @@ java -Xmx2g -Dbenchmark.cognition.enabled=false -jar target/quarkus-app/quarkus-
 
 - **memory-service** (`../memory-service`): Must be running on port 8082 with OpenAI embeddings enabled
 - **cognition-processor** (`../cognitive-memory/cognition-processor-quarkus`): Must be running for cognition mode
-- **memory-service-rest-quarkus**: Maven dependency (999-SNAPSHOT) — installed in local Maven repo
-- **LoCoMo dataset**: Symlinked from `../locomo/data/locomo10.json`
-- **LongMemEval dataset**: Symlinked from `../LongMemEval/data/longmemeval_s_cleaned.json`
-- **BEAM dataset**: Symlinked from `../BEAM/chats/`
+- **memory-service-rest-quarkus**: Maven dependency from Maven Central
+- **Datasets**: Downloaded into `./datasets` with `scripts/download-datasets.sh`
 
 ## Gotchas
 
