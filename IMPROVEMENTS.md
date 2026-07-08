@@ -13,12 +13,12 @@
 - **F1 Score**: word overlap between generated and gold answers (precision × recall). Doesn't understand meaning — "Sweden" vs "Not in a relationship" scores 0 even if both are correct paraphrases.
 - **BLEU Score**: n-gram (word sequence) overlap. Stricter than F1 because word order matters. Originally designed for machine translation evaluation.
 
-| Category | Accuracy |
-|----------|----------|
-| causal | 76.9% (10/13) |
-| temporal | 64.9% (24/37) |
-| factual | 57.1% (40/70) |
-| **multi-hop** | **21.9% (7/32)** |
+| Category | Accuracy | What it tests |
+|----------|----------|---------------|
+| causal | 76.9% (10/13) | Cause-and-effect reasoning — "What did X realize after Y happened?" |
+| temporal | 64.9% (24/37) | Time-based questions — "When did X do Y?" or "What happened first?" |
+| factual | 57.1% (40/70) | Direct fact recall — "Where does X live?" or "What is X's job?" |
+| **multi-hop** | **21.9% (7/32)** | Combining multiple facts — "What hobbies do X's children share?" (find children → find each child's hobbies → intersect) |
 
 ---
 
