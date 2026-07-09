@@ -18,9 +18,11 @@ public interface LlmJudge {
             Rules:
             - CORRECT if the generated answer captures the key facts from the ground truth, even if worded differently.
             - CORRECT if the answer is a reasonable paraphrase or contains the essential information.
-            - WRONG if the answer contradicts the ground truth, is missing critical facts, or says "I don't know" when the ground truth has a clear answer.
-            - WRONG if the answer fabricates information not in the ground truth.
-            - For dates/numbers: minor format differences are OK (e.g., "May 7" vs "7 May 2023"), but wrong values are WRONG.
+            - CORRECT if the answer is semantically equivalent (e.g., "self-care" and "mental health awareness" convey similar meaning).
+            - CORRECT if extra details are provided alongside the correct answer (e.g., ground truth is "June 2023" and answer says "the week before June 27, 2023").
+            - WRONG if the answer contradicts the ground truth or gives a fundamentally different answer.
+            - WRONG if the answer says "I don't know" or "Not mentioned" when the ground truth has a clear answer.
+            - For dates/numbers: minor format differences and approximate matches are OK (e.g., "May 7" vs "7 May 2023", "June 2023" vs "before June 27, 2023").
 
             Question: {question}
 
