@@ -61,6 +61,46 @@ You can also point at another location with `-Dbenchmark.dataset=/path/to/locomo
 `-Dbenchmark.longmemeval.dataset=/path/to/longmemeval_s_cleaned.json`, or
 `-Dbenchmark.beam.dataset-dir=/path/to/BEAM/chats`.
 
+## New Features
+
+### User ID Format (LoCoMo)
+
+By default, LoCoMo now uses the actual speaker names from the dataset as user IDs (e.g., "alice", "bob") instead of generic identifiers like "locomo_0". This makes logs and Keycloak users more intuitive.
+
+**Default behavior:**
+- User ID = speaker_a name (sanitized: lowercase, special chars → underscores)
+- Example: "Alice" → "alice", "Mary Jane" → "mary_jane"
+
+**Custom format:**
+Use `benchmark.user-id-format` with placeholders:
+- `{convIdx}` - Conversation index (0-9)
+- `{speakerA}` - Speaker A's name
+- `{speakerB}` - Speaker B's name
+
+**Examples:**
+```bash
+# Legacy format
+java -Dbenchmark.user-id-format=locomo_{convIdx} -jar target/quarkus-app/quarkus-run.jar locomo
+
+# Custom format
+java -Dbenchmark.user-id-format={speakerA}_conv{convIdx} -jar target/quarkus-app/quarkus-run.jar locomo
+```
+
+See [USER_ID_FORMAT.md](USER_ID_FORMAT.md) for detailed documentation.
+
+### User Profile Generation
+
+After cognition stabilizes, the benchmark automatically generates a consolidated user profile by calling the cognition processor's `/api/consolidate/{userId}` endpoint.
+
+**Configuration:**
+- `memory-service.cognition.url` - Cognition processor URL (default: `http://localhost:8090`)
+- `memory-service.cognition.generate-profile` - Enable/disable (default: `true`)
+
+**Disable profile generation:**
+```bash
+java -Dmemory-service.cognition.generate-profile=false -jar target/quarkus-app/quarkus-run.jar locomo
+```
+
 ## Running the benchmarks
 
 ### Start the services
@@ -82,11 +122,17 @@ the compose admin credentials, then logs in as each benchmark user.
 # Single conversation (quick test)
 java -Xmx2g -Dbenchmark.conversations=0 -jar target/quarkus-app/quarkus-run.jar locomo
 
-# All 10 conversations
+# All 10 conversations (uses speaker names as user IDs by default)
 java -Xmx2g -jar target/quarkus-app/quarkus-run.jar locomo
+
+# Use legacy user ID format (locomo_0, locomo_1, etc.)
+java -Xmx2g -Dbenchmark.user-id-format=locomo_{convIdx} -jar target/quarkus-app/quarkus-run.jar locomo
 
 # Without cognition (stop cognition processor first)
 java -Xmx2g -Dbenchmark.cognition.enabled=false -jar target/quarkus-app/quarkus-run.jar locomo
+
+# Without profile generation
+java -Xmx2g -Dmemory-service.cognition.generate-profile=false -jar target/quarkus-app/quarkus-run.jar locomo
 ```
 
 ### LongMemEval
@@ -169,6 +215,8 @@ All settings in `src/main/resources/application.properties`:
 |---|---|---|
 | `memory-service.url` | `http://localhost:8082` | Memory service URL |
 | `memory-service.api-key` | `agent-api-key-1` | Agent client API key sent with the OIDC bearer token |
+| `memory-service.cognition.url` | `http://localhost:8090` | Cognition processor URL for profile generation |
+| `memory-service.cognition.generate-profile` | `true` | Generate user profile after cognition stabilizes |
 | `memory-service.oidc.enabled` | `true` | Fetch Keycloak access tokens for Memory Service calls |
 | `memory-service.oidc.token-url` | `http://localhost:8081/realms/memory-service/protocol/openid-connect/token` | Keycloak token endpoint |
 | `memory-service.oidc.realm` | `memory-service` | Keycloak realm used for benchmark users |
@@ -183,6 +231,7 @@ All settings in `src/main/resources/application.properties`:
 | `memory-service.oidc.admin.password` | `admin` | Keycloak admin password |
 | `benchmark.top-k` | `50` | Max memories to retrieve per question |
 | `benchmark.output-dir` | `results` | Output directory |
+| `benchmark.user-id-format` | _(speaker_a name)_ | User ID format with placeholders: `{convIdx}`, `{speakerA}`, `{speakerB}`. Default uses speaker_a name (e.g., "alice"). Use `locomo_{convIdx}` for legacy format. |
 | `benchmark.cognition.enabled` | `true` | Wait for cognition processor |
 | `benchmark.cognition.namespace` | `cognition.v1` | Cognition memory namespace |
 | `benchmark.cognition.wait-timeout-seconds` | `600` | Max wait for extraction |

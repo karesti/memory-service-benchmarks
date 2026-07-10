@@ -17,6 +17,17 @@ public interface MemoryServiceConfig {
 
     Oidc oidc();
 
+    Cognition cognition();
+
+    interface Cognition {
+
+        @WithDefault("http://localhost:8090")
+        String url();
+
+        @WithDefault("true")
+        boolean generateProfile();
+    }
+
     interface Oidc {
 
         @WithDefault("true")

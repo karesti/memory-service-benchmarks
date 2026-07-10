@@ -23,6 +23,8 @@ public interface BenchmarkConfig {
     @WithDefault("false")
     boolean skipIngest();
 
+    Optional<String> userIdFormat();
+
     Cognition cognition();
 
     HttpClient httpclient();
