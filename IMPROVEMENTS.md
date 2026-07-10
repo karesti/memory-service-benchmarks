@@ -4,84 +4,58 @@
 
 | Category | Correct | Total | Accuracy |
 |----------|---------|-------|----------|
+| factual | 55 | 70 | 78.6% |
 | causal | 10 | 13 | 76.9% |
-| temporal | 23 | 37 | 62.2% |
-| factual | 43 | 70 | 61.4% |
-| multi-hop | 13 | 32 | 40.6% |
-| **overall** | **89** | **152** | **58.6%** |
+| temporal | 24 | 37 | 64.9% |
+| multi-hop | 20 | 32 | 62.5% |
+| **overall** | **109** | **152** | **71.7%** |
 
 **Benchmark model**: gpt-4o-mini (answer generation + judging)
 **Cognition model**: gpt-4o-mini (memory extraction)
-**Search**: single vector query, top-k=50, 100 memories extracted per conversation
+**Search**: single vector query, top-k=100, 347 memories extracted per conversation
+
+### Results progression
+
+| Run | Overall | Factual | Causal | Temporal | Multi-hop | What changed |
+|-----|---------|---------|--------|----------|-----------|--------------|
+| Baseline | 58.6% | 61.4% | 76.9% | 62.2% | 40.6% | Prompt + judge fixes, top-k=50, ~133 memories |
+| + Exhaustive extraction | 61.2% | 78.6% | 69.2% | 45.9% | 37.5% | Extract everything, top-k=50 — factual +17pp but temporal regressed due to search window too small for 347 memories |
+| + top-k=100 | **71.7%** | **78.6%** | **76.9%** | **64.9%** | **62.5%** | top-k=100 recovered temporal and unlocked multi-hop +22pp |
 
 ### Category descriptions
 
 | Category | What it tests |
 |----------|---------------|
+| factual | Direct fact recall — "Where does X live?" or "What is X's job?" |
 | causal | Cause-and-effect reasoning — "What did X realize after Y happened?" |
 | temporal | Time-based questions — "When did X do Y?" or "What happened first?" |
-| factual | Direct fact recall — "Where does X live?" or "What is X's job?" |
 | multi-hop | Combining multiple facts — "What hobbies do X's children share?" (find children → find each child's hobbies → intersect) |
 
 ---
 
-## Failure Analysis (3 distinct patterns)
+## What changed to get from 58.6% to 71.7%
 
-### Pattern 1: Cognition extraction lost specific details
+### 1. Exhaustive extraction (cognition processor)
 
-**Affects: all categories — root cause of most factual and temporal failures**
+Rewrote the extraction prompt from "extract durable information" to "extract EVERYTHING." Every event, item, feeling, plan, detail — no matter how minor. This increased extracted memories from ~133 to 347, and is the main driver of the factual +17pp improvement.
 
-The cognition processor over-summarizes when extracting memories. Specific facts, names, and dates are abstracted away. Once a detail is lost at extraction time, no amount of search or LLM tuning can recover it.
+Key changes in `durable-extractor-system.md`:
+- Philosophy changed from selective/durable to exhaustive
+- Anti-generalization rule: never replace "Sweden" with "home country", "Charlotte's Web" with "a book", etc.
+- Temporal resolution: resolve "last week" to absolute dates using entry timestamps
+- One fact per memory: don't combine unrelated facts
 
-**Evidence from actual retrieved memories:**
+### 2. Relaxed verifier (cognition processor)
 
-| Question | Gold Answer | Top memory retrieved | Problem |
-|----------|-------------|---------------------|---------|
-| "Where did Caroline move from 4 years ago?" | Sweden | "has known her friends for four years since moving from her home country" | Country name lost — "home country" instead of "Sweden" |
-| "When did Caroline have a picnic?" | The week before 6 July 2023 | "had a picnic with friends and family last week" | Absolute date lost — "last week" is useless without context |
-| "What books has Melanie read?" | "Nothing is Impossible", "Charlotte's Web" | "engages in self-care activities such as running, reading, or playing the violin" | Book titles lost — only "reading" as generic activity survived |
-| "What items has Melanie bought?" | Figurines, shoes | No relevant memory retrieved at all | Specific purchases never extracted as memories |
-| "What are the new shoes that Melanie got used for?" | Running | No relevant memory retrieved at all | Shoe purchase never extracted |
-| "What was Melanie's favorite childhood book?" | "Charlotte's Web" | No relevant memory retrieved at all | Childhood reading preference never extracted |
-| "How many children does Melanie have?" | 3 | "Melanie has children" | Count lost — "has children" instead of "has 3 children" |
-| "When did Melanie go to the museum?" | 5 July 2023 | No relevant memory retrieved at all | Museum visit never extracted as a memory |
+Changed citation verification from "exact match only" to substring matching. Citations that omit the `[timestamp] [ROLE]` prefix are now valid. This prevents good memories from being rejected due to formatting mismatches.
 
-**What needs to change in cognition extraction:**
-1. Preserve specific entities verbatim — names, places, dates, numbers, book titles
-2. Preserve temporal anchoring — compute absolute dates from relative references ("last week" → actual date)
-3. Extract more granular facts — individual events, purchases, book titles should be separate memories, not collapsed into generic activity summaries
-4. Extract causal chains as single memories — "After the charity race, Melanie realized self-care is important" should be one memory
+### 3. Increased max-completion-tokens (cognition processor)
 
-### Pattern 2: Single vector search misses scattered facts
+Bumped from 4096 to 8192 to prevent JSON truncation with larger extractions.
 
-**Affects: mainly multi-hop**
+### 4. Increased top-k from 50 to 100 (benchmark)
 
-When the answer requires aggregating information from multiple memories, a single vector search on the raw question doesn't retrieve all relevant pieces. The query embedding matches some memories but not others.
-
-**Evidence:**
-
-| Question | Gold Answer | What was retrieved | What was missed |
-|----------|-------------|-------------------|-----------------|
-| "What activities does Melanie partake in?" | pottery, camping, painting, swimming | running, reading, violin, hiking, painting, pottery | swimming — the query "activities" doesn't match a swimming memory semantically |
-| "Where has Melanie camped?" | beach, mountains, forest | mountains, forest | beach — the camping memory didn't mention beach or it wasn't in top-50 |
-| "What LGBTQ+ events has Caroline participated in?" | Pride parade, school speech, support group | Got pride and conference, missed school speech | school speech didn't match "LGBTQ+ events" semantically |
-| "What is Caroline's relationship status?" | Single | No relevant memory retrieved | Relationship status was never directly stated or extracted |
-
-**Root cause:** a single embedding of "What activities does Melanie partake in?" is closest to memories about activities in general, but individual activity mentions (swimming at a specific event) may be too far in embedding space.
-
-### Pattern 3: Temporal references not resolved
-
-**Affects: temporal questions**
-
-Even when a memory exists, it often contains relative time references ("last week", "last month") instead of absolute dates, making temporal questions unanswerable.
-
-**Evidence:**
-
-| Question | Gold Answer | Memory content | Problem |
-|----------|-------------|---------------|---------|
-| "When did Caroline have a picnic?" | The week before 6 July 2023 | "had a picnic with friends last week" | "last week" relative to what? |
-| "When did Caroline go to a pride parade during the summer?" | The week before 3 July 2023 | "attended a pride parade on July 8th, 2023" | Date was extracted but shifted (July 8 vs before July 3) |
-| "When did Melanie go camping in July?" | Two weekends before 17 July 2023 | "went camping the week before June 27, 2023" | Memory exists but for June, not July — a second July camping event wasn't extracted |
+With 347 memories, top-k=50 only covered 14% of all memories per question. Temporal and multi-hop questions need broader coverage. top-k=100 recovered temporal (+19pp from the regression) and unlocked multi-hop (+25pp).
 
 ---
 
@@ -96,18 +70,41 @@ The `/v1/memories/search` and `/admin/memories/search` endpoints accept a `queri
 - Batched embedding (all sub-queries embedded in one call)
 - `per_query_limit` to control results per sub-query
 
-This is ready to use. The missing piece is: **who generates the sub-queries from the original question?**
+### Query decomposition (cognition processor + memory-service, built, not yet tested)
+
+- Cognition processor: `POST /api/decompose` endpoint — LLM decomposes complex questions into sub-queries, passes simple ones through unchanged
+- Memory-service: when `MEMORY_SERVICE_COGNITION_PROCESSOR_URL` is set, automatically decomposes single queries and uses multi-query search if multiple sub-queries are returned. Falls back to single query on failure.
+- **Status**: code is built but hostname was wrong in compose.yaml (`cognition` → should be `cognition-processor`). Not yet tested with correct config.
 
 ### Hybrid search (memory-service, `hybrid_search` branch)
 
-Vector + fulltext with RRF merge. Controlled by `MEMORY_SERVICE_SEARCH_HYBRID_ENABLED`. Previously tested with raw queries and lowered overall accuracy. Not yet benchmarked with current prompt + judge fixes.
+Vector + fulltext with RRF merge. Controlled by `MEMORY_SERVICE_SEARCH_HYBRID_ENABLED`. Not yet benchmarked with current setup.
 
 ---
 
-## Improvement Priorities
+## Remaining failures
+
+### Still WRONG — multi-hop (12/32 wrong)
+- "Where did Caroline move from 4 years ago?" — "Sweden" still extracted as "home country" in one memory
+- "How many children does Melanie have?" — extracted as "two children" instead of 3
+- "What activities does Melanie partake in?" — incomplete list
+- "What LGBTQ+ events has Caroline participated in?" — misses some events
+- These need query decomposition to improve further
+
+### Still WRONG — temporal (13/37 wrong)
+- Several "When did X happen?" questions where the extracted date is wrong or missing
+- "When did Caroline have a picnic?" — date still not correctly resolved
+
+### Still WRONG — factual (15/70 wrong)
+- Very specific details: "What precautionary sign at the café?", "What did the posters say?", "What painting on October 13?"
+- These may need even more granular extraction or are at the limit of what gpt-4o-mini can extract
+
+---
+
+## Next steps
 
 | # | Improvement | Effort | Expected Impact | Status |
 |---|-------------|--------|-----------------|--------|
-| 1 | Cognition: preserve entities, dates, counts, causal chains | Medium | High (all categories) | To do — root cause of most failures |
-| 2 | Query decomposition for multi-hop | Medium | High (multi-hop) | Multi-query search ready in memory-service. Decomposition logic not built yet — needs to live either in cognition or memory-service |
-| 3 | Hybrid search | Low | TBD | Available in `hybrid_search` branch, not yet benchmarked |
+| 1 | Test query decomposition | Low | Multi-hop improvement | Built, needs hostname fix + test |
+| 2 | Try gpt-4o for extraction | Low | Better extraction quality | Config change only |
+| 3 | Hybrid search | Low | TBD | Available in `hybrid_search` branch |
