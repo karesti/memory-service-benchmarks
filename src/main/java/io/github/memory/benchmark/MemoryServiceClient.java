@@ -148,6 +148,32 @@ public class MemoryServiceClient {
       return results;
    }
 
+   public int countMemories(String userId) {
+      try {
+         String effectiveUserId = effectiveUserId(userId);
+         Map<String, Object> body = Map.of(
+                 "namespace_prefix", List.of("user", effectiveUserId, benchmarkConfig.cognition().namespace()),
+                 "limit", 1000);
+
+         String json = mapper.writeValueAsString(body);
+         HttpRequest.Builder request = HttpRequest.newBuilder()
+                 .uri(URI.create(serviceConfig.url() + "/admin/memories/search"))
+                 .header("Content-Type", "application/json")
+                 .header("X-API-Key", serviceConfig.adminApiKey())
+                 .POST(HttpRequest.BodyPublishers.ofString(json))
+                 .timeout(Duration.ofSeconds(30));
+
+         HttpResponse<String> resp = http().send(request.build(), HttpResponse.BodyHandlers.ofString());
+         if (resp.statusCode() >= 300) return -1;
+
+         SearchResponse search = mapper.readValue(resp.body(), SearchResponse.class);
+         return search.items().size();
+      } catch (Exception e) {
+         log.debugf("countMemories failed: %s", e.getMessage());
+         return -1;
+      }
+   }
+
    public int waitForCognition(String userId) throws InterruptedException {
       var cognition = benchmarkConfig.cognition();
       long deadline = System.currentTimeMillis() + (cognition.waitTimeoutSeconds() * 1000L);
@@ -159,12 +185,14 @@ public class MemoryServiceClient {
 
       while (System.currentTimeMillis() < deadline) {
          try {
-            List<MemoryResult> results = searchMemories(userId, "", 100);
-            int count = results.size();
+            int count = countMemories(userId);
+            if (count < 0) {
+               count = searchMemories(userId, "", 100).size();
+            }
             long elapsed = (cognition.waitTimeoutSeconds() * 1000L - (deadline - System.currentTimeMillis())) / 1000;
 
             if (count != lastCount) {
-               log.infof("Cognition progress for user=%s: %d memories found (%ds elapsed)", userId, count, elapsed);
+               log.infof("Cognition progress for user=%s: %d memories extracted (%ds elapsed)", userId, count, elapsed);
                lastCount = count;
                lastChangeTime = System.currentTimeMillis();
             }
@@ -172,7 +200,7 @@ public class MemoryServiceClient {
             if (count > 0 && lastChangeTime > 0) {
                long stableFor = (System.currentTimeMillis() - lastChangeTime) / 1000;
                if (stableFor >= cognition.stableSeconds()) {
-                  log.infof("Cognition stable for %ds with %d memories — proceeding", stableFor, count);
+                  log.infof("Cognition ready: %d memories extracted for user=%s", count, userId);
                   return count;
                }
             }
@@ -182,7 +210,7 @@ public class MemoryServiceClient {
          Thread.sleep(cognition.pollIntervalSeconds() * 1000L);
       }
 
-      log.warnf("Cognition wait timed out for user=%s after %ds (%d memories found)",
+      log.warnf("Cognition wait timed out for user=%s after %ds (%d memories found via search)",
               userId, cognition.waitTimeoutSeconds(), lastCount);
       return lastCount;
    }

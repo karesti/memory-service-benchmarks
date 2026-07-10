@@ -12,6 +12,9 @@ public interface MemoryServiceConfig {
     @WithDefault("agent-api-key-1")
     String apiKey();
 
+    @WithDefault("cognition-processor-key-123")
+    String adminApiKey();
+
     Oidc oidc();
 
     interface Oidc {
