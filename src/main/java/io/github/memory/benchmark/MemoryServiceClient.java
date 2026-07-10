@@ -217,6 +217,33 @@ public class MemoryServiceClient {
 
    // -- HTTP ------------------------------------------------------------------
 
+   public void generateUserProfile(String userId) throws Exception {
+      if (!serviceConfig.cognition().generateProfile()) {
+         log.debugf("Profile generation disabled for user=%s", userId);
+         return;
+      }
+
+      String consolidateUrl = serviceConfig.cognition().url() + "/api/consolidate/" + userId;
+
+      HttpRequest request = HttpRequest.newBuilder()
+              .uri(URI.create(consolidateUrl))
+              .header("Content-Type", "application/json")
+              .POST(HttpRequest.BodyPublishers.noBody())
+              .timeout(Duration.ofSeconds(120))
+              .build();
+
+      HttpResponse<String> resp = http().send(request, HttpResponse.BodyHandlers.ofString());
+
+      if (resp.statusCode() >= 300) {
+         log.warnf("Profile generation failed for user=%s: %d %s",
+                 userId, resp.statusCode(), resp.body());
+         return;
+      }
+
+      log.infof("Generated user profile for user=%s", userId);
+   }
+
+
    private HttpResponse<String> post(String userId, String path, Map<String, Object> body) throws Exception {
       String json = mapper.writeValueAsString(body);
       HttpRequest.Builder request = HttpRequest.newBuilder()

@@ -77,9 +77,13 @@ public class LoCoMoBenchmark implements Runnable {
             }
 
             LoCoMoDataset.Conversation conv = dataset.get(convIdx);
-            String userId = "locomo_" + convIdx;
+            String userId = config.userIdFormat()
+                    .map(format -> format.replace("{convIdx}", String.valueOf(convIdx))
+                                         .replace("{speakerA}", conv.speakerA())
+                                         .replace("{speakerB}", conv.speakerB()))
+                    .orElse(conv.speakerA().toLowerCase().replaceAll("[^a-z0-9_-]", "_"));
 
-            log.infof("=== Conversation %d: %s & %s (%d sessions, %d questions) ===",
+            log.infof("=== Conversation %d: %s (USER) & %s (AI) (%d sessions, %d questions) ===",
                     convIdx, conv.speakerA(), conv.speakerB(),
                     conv.sessions().size(), conv.questions().size());
 
@@ -92,6 +96,13 @@ public class LoCoMoBenchmark implements Runnable {
                     log.infof("Waiting for cognition processor to extract memories for user=%s...", userId);
                     int memCount = memoryService.waitForCognition(userId);
                     log.infof("Cognition ready: %d memories extracted for user=%s", memCount, userId);
+                    
+                    // Generate user profile after cognition is stable
+                    try {
+                        memoryService.generateUserProfile(userId);
+                    } catch (Exception e) {
+                        log.warnf("Failed to generate profile for user=%s: %s", userId, e.getMessage());
+                    }
                 }
             }
 
