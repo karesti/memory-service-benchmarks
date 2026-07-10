@@ -227,10 +227,13 @@ public class MemoryServiceClient {
       }
 
       long expiresInSeconds = token.expires_in() != null ? token.expires_in() : 300;
+      long maxCacheSeconds = 240;
+      long effectiveExpiry = Math.min(expiresInSeconds, maxCacheSeconds);
       long refreshSkewMillis = Math.max(0, serviceConfig.oidc().refreshSkewSeconds()) * 1000L;
-      long expiresAtMillis = now + (expiresInSeconds * 1000L) - refreshSkewMillis;
+      long expiresAtMillis = now + (effectiveExpiry * 1000L) - refreshSkewMillis;
       tokenCache.put(benchmarkUserId, new CachedToken(token.access_token(), expiresAtMillis));
-      log.infof("Logged in to Keycloak as benchmark user=%s", benchmarkUserId);
+      log.infof("Logged in to Keycloak as benchmark user=%s (token expires_in=%ds, cache=%ds)",
+              benchmarkUserId, expiresInSeconds, effectiveExpiry);
       return token.access_token();
    }
 
