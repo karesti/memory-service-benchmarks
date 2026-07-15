@@ -107,7 +107,7 @@ public class MemoryServiceClient {
 
    public void appendEntry(String userId, String conversationId, String role, String text) throws Exception {
       Map<String, Object> content = Map.of("role", role, "text", text);
-      Map<String, Object> body = Map.of("channel", "history", "contentType", "history", "content", List.of(content));
+      Map<String, Object> body = Map.of("channel", "history", "contentType", "history", "content", List.of(content), "indexedContent", text);
 
       HttpResponse<String> resp = post(userId, "/v1/conversations/" + conversationId + "/entries", body);
       if (resp.statusCode() >= 300) {
