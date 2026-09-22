@@ -33,6 +33,8 @@ public interface BenchmarkConfig {
 
     Beam beam();
 
+    LongContext longContext();
+
     interface Cognition {
 
         @WithDefault("true")
@@ -81,5 +83,29 @@ public interface BenchmarkConfig {
 
         @WithDefault("2")
         int maxChats();
+    }
+
+    interface LongContext {
+
+        @WithDefault("false")
+        boolean enabled();
+
+        @WithDefault("16000")
+        int maxTokens();
+
+        @WithDefault("50")
+        int answerTokenBudget();
+
+        @WithDefault("1")
+        int batchSize();
+
+        @WithDefault("cl100k_base")
+        String encoding();
+
+        @WithDefault("KEEP_NEWEST")
+        String truncation();
+
+        @WithDefault("0")
+        int questionDelayMs();
     }
 }
