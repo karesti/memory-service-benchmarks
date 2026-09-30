@@ -1,5 +1,6 @@
 package io.github.memory.benchmark;
 
+import dev.langchain4j.service.Result;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
 import io.quarkiverse.langchain4j.RegisterAiService;
@@ -31,5 +32,5 @@ public interface LlmAnswerGenerator {
             Question: {question}
 
             Answer:""")
-    String generateAnswer(@V("memories") String memories, @V("question") String question);
+    Result<String> generateAnswer(@V("memories") String memories, @V("question") String question);
 }

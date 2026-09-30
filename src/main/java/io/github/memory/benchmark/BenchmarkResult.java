@@ -16,7 +16,12 @@ public record BenchmarkResult(
         double bleu,
         double searchLatencyMs,
         int memoriesRetrieved,
-        List<String> topMemories
+        List<String> topMemories,
+        Integer answerInputTokens,
+        Integer answerOutputTokens,
+        Integer judgeInputTokens,
+        Integer judgeOutputTokens,
+        Integer totalTokens
 ) {
 
     public boolean isCorrect() {

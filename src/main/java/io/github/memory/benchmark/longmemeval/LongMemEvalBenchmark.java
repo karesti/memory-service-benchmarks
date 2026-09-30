@@ -3,6 +3,8 @@ package io.github.memory.benchmark.longmemeval;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
+import dev.langchain4j.model.output.TokenUsage;
+import dev.langchain4j.service.Result;
 import io.github.memory.benchmark.BenchmarkConfig;
 import io.github.memory.benchmark.BenchmarkResult;
 import io.github.memory.benchmark.LlmAnswerGenerator;
@@ -169,16 +171,32 @@ public class LongMemEvalBenchmark implements Runnable {
                 .toList();
 
         String generatedAnswer;
+        Integer answerInTokens = null;
+        Integer answerOutTokens = null;
         try {
-            generatedAnswer = answerGenerator.generateAnswer(memoriesText, question.question());
+            Result<String> answerResp = answerGenerator.generateAnswer(memoriesText, question.question());
+            generatedAnswer = answerResp.content() != null ? answerResp.content() : "";
+            TokenUsage tu = answerResp.tokenUsage();
+            if (tu != null) {
+                answerInTokens = tu.inputTokenCount();
+                answerOutTokens = tu.outputTokenCount();
+            }
         } catch (Exception e) {
             generatedAnswer = "ERROR: " + e.getMessage();
         }
 
         String verdict = "WRONG";
         String reason = "";
+        Integer judgeInTokens = null;
+        Integer judgeOutTokens = null;
         try {
-            String judgeResponse = verdictJudge.judge(question.question(), question.answer(), generatedAnswer);
+            Result<String> judgeResp = verdictJudge.judge(question.question(), question.answer(), generatedAnswer);
+            String judgeResponse = judgeResp.content() != null ? judgeResp.content() : "";
+            TokenUsage tu = judgeResp.tokenUsage();
+            if (tu != null) {
+                judgeInTokens = tu.inputTokenCount();
+                judgeOutTokens = tu.outputTokenCount();
+            }
             @SuppressWarnings("unchecked")
             Map<String, String> parsed = mapper.readValue(extractJson(judgeResponse), Map.class);
             verdict = parsed.getOrDefault("verdict", "WRONG");
@@ -187,6 +205,11 @@ public class LongMemEvalBenchmark implements Runnable {
             reason = "Judge parsing failed: " + e.getMessage();
         }
 
+        int totalIn = (answerInTokens != null ? answerInTokens : 0) + (judgeInTokens != null ? judgeInTokens : 0);
+        int totalOut = (answerOutTokens != null ? answerOutTokens : 0) + (judgeOutTokens != null ? judgeOutTokens : 0);
+        Integer totalTokens = (answerInTokens != null || judgeInTokens != null || answerOutTokens != null || judgeOutTokens != null)
+                ? (totalIn + totalOut) : null;
+
         double score = "CORRECT".equalsIgnoreCase(verdict) ? 1.0 : 0.0;
         TextMetrics.Scores textScores = TextMetrics.compute(question.answer(), generatedAnswer);
 
@@ -194,7 +217,8 @@ public class LongMemEvalBenchmark implements Runnable {
                 question.questionId(), "longmemeval", question.questionType(),
                 question.question(), question.answer(), generatedAnswer,
                 verdict, reason, score, textScores.f1(), textScores.bleu(),
-                searchLatencyMs, memories.size(), topMemoryTexts
+                searchLatencyMs, memories.size(), topMemoryTexts,
+                answerInTokens, answerOutTokens, judgeInTokens, judgeOutTokens, totalTokens
         );
     }
 
@@ -239,13 +263,18 @@ public class LongMemEvalBenchmark implements Runnable {
                 "dataset", config.longmemeval().dataset(),
                 "total_questions", results.size()
         ));
-        output.put("summary", Map.of(
-                "overall_accuracy", summary.overallAccuracy(),
-                "total_questions", summary.totalQuestions(),
-                "total_correct", summary.totalCorrect(),
-                "avg_search_latency_ms", summary.avgSearchLatencyMs(),
-                "avg_memories_retrieved", summary.avgMemoriesRetrieved()
-        ));
+        Map<String, Object> summaryMap = new LinkedHashMap<>();
+        summaryMap.put("overall_accuracy", summary.overallAccuracy());
+        summaryMap.put("total_questions", summary.totalQuestions());
+        summaryMap.put("total_correct", summary.totalCorrect());
+        summaryMap.put("avg_search_latency_ms", summary.avgSearchLatencyMs());
+        summaryMap.put("avg_memories_retrieved", summary.avgMemoriesRetrieved());
+        summaryMap.put("total_input_tokens", summary.totalInputTokens());
+        summaryMap.put("total_output_tokens", summary.totalOutputTokens());
+        summaryMap.put("total_tokens", summary.totalTokens());
+        summaryMap.put("avg_input_tokens_per_question", summary.avgInputTokensPerQuestion());
+        summaryMap.put("avg_output_tokens_per_question", summary.avgOutputTokensPerQuestion());
+        output.put("summary", summaryMap);
         output.put("by_category", summary.byCategory().stream().map(cm -> Map.of(
                 "category", cm.name(),
                 "accuracy", cm.accuracy(),
