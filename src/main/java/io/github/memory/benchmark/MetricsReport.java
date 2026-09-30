@@ -16,12 +16,17 @@ public class MetricsReport {
             double avgBleu,
             double avgSearchLatencyMs,
             double avgMemoriesRetrieved,
-            List<CategoryMetrics> byCategory
+            List<CategoryMetrics> byCategory,
+            long totalInputTokens,
+            long totalOutputTokens,
+            long totalTokens,
+            double avgInputTokensPerQuestion,
+            double avgOutputTokensPerQuestion
     ) {}
 
     public static Summary compute(String benchmarkName, List<BenchmarkResult> results) {
         if (results.isEmpty()) {
-            return new Summary(benchmarkName, 0, 0, 0, 0, 0, 0, 0, List.of());
+            return new Summary(benchmarkName, 0, 0, 0, 0, 0, 0, 0, List.of(), 0, 0, 0, 0, 0);
         }
 
         double totalScore = results.stream().mapToDouble(BenchmarkResult::score).sum();
@@ -30,6 +35,25 @@ public class MetricsReport {
         double avgBleu = results.stream().mapToDouble(BenchmarkResult::bleu).average().orElse(0);
         double avgLatency = results.stream().mapToDouble(BenchmarkResult::searchLatencyMs).average().orElse(0);
         double avgMemories = results.stream().mapToDouble(BenchmarkResult::memoriesRetrieved).average().orElse(0);
+
+        long totalInputTokens = results.stream().mapToLong(r -> {
+            long inAns = r.answerInputTokens() != null ? r.answerInputTokens() : 0L;
+            long inJudge = r.judgeInputTokens() != null ? r.judgeInputTokens() : 0L;
+            return inAns + inJudge;
+        }).sum();
+
+        long totalOutputTokens = results.stream().mapToLong(r -> {
+            long outAns = r.answerOutputTokens() != null ? r.answerOutputTokens() : 0L;
+            long outJudge = r.judgeOutputTokens() != null ? r.judgeOutputTokens() : 0L;
+            return outAns + outJudge;
+        }).sum();
+
+        long totalTokens = results.stream().mapToLong(r ->
+            r.totalTokens() != null ? r.totalTokens() : 0L
+        ).sum();
+
+        double avgInputTokensPerQuestion = (double) totalInputTokens / results.size();
+        double avgOutputTokensPerQuestion = (double) totalOutputTokens / results.size();
 
         Map<String, List<BenchmarkResult>> byCategory = results.stream()
                 .collect(Collectors.groupingBy(BenchmarkResult::category));
@@ -58,7 +82,12 @@ public class MetricsReport {
                 avgBleu,
                 avgLatency,
                 avgMemories,
-                categoryMetrics
+                categoryMetrics,
+                totalInputTokens,
+                totalOutputTokens,
+                totalTokens,
+                avgInputTokensPerQuestion,
+                avgOutputTokensPerQuestion
         );
     }
 
@@ -95,10 +124,20 @@ public class MetricsReport {
 
         sb.append("│                                                             │\n");
         sb.append("├─────────────────────────────────────────────────────────────┤\n");
-        sb.append("│  Performance                                               │\n");
+        sb.append("│  Performance & Token Usage                                 │\n");
         sb.append("│                                                             │\n");
         sb.append(String.format("│  Avg search latency:    %6.0f ms                           │\n", s.avgSearchLatencyMs()));
         sb.append(String.format("│  Avg memories / query:  %6.1f                              │\n", s.avgMemoriesRetrieved()));
+        sb.append(String.format("│  Total tokens:          %8d (in: %d, out: %d)%s│\n",
+                s.totalTokens(), s.totalInputTokens(), s.totalOutputTokens(),
+                pad(62 - String.format("│  Total tokens:          %8d (in: %d, out: %d)",
+                        s.totalTokens(), s.totalInputTokens(), s.totalOutputTokens()).length() - 1)));
+        sb.append(String.format("│  Avg tokens / question: %8.1f (in: %.1f, out: %.1f)%s│\n",
+                (double) s.totalTokens() / (s.totalQuestions() > 0 ? s.totalQuestions() : 1),
+                s.avgInputTokensPerQuestion(), s.avgOutputTokensPerQuestion(),
+                pad(62 - String.format("│  Avg tokens / question: %8.1f (in: %.1f, out: %.1f)",
+                        (double) s.totalTokens() / (s.totalQuestions() > 0 ? s.totalQuestions() : 1),
+                        s.avgInputTokensPerQuestion(), s.avgOutputTokensPerQuestion()).length() - 1)));
         sb.append("│                                                             │\n");
         sb.append("└─────────────────────────────────────────────────────────────┘\n");
 

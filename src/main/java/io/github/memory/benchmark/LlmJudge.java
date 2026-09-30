@@ -1,5 +1,6 @@
 package io.github.memory.benchmark;
 
+import dev.langchain4j.service.Result;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
 import io.quarkiverse.langchain4j.RegisterAiService;
@@ -31,5 +32,5 @@ public interface LlmJudge {
             Generated answer: {generatedAnswer}
 
             Verdict (JSON only):""")
-    String judge(@V("question") String question, @V("groundTruth") String groundTruth, @V("generatedAnswer") String generatedAnswer);
+    Result<String> judge(@V("question") String question, @V("groundTruth") String groundTruth, @V("generatedAnswer") String generatedAnswer);
 }

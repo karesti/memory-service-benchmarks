@@ -3,6 +3,8 @@ package io.github.memory.benchmark.beam;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
+import dev.langchain4j.model.output.TokenUsage;
+import dev.langchain4j.service.Result;
 import io.github.memory.benchmark.BenchmarkConfig;
 import io.github.memory.benchmark.BenchmarkResult;
 import io.github.memory.benchmark.LlmAnswerGenerator;
@@ -148,8 +150,16 @@ public class BeamBenchmark implements Runnable {
 
         // Generate answer
         String generatedAnswer;
+        Integer answerInTokens = null;
+        Integer answerOutTokens = null;
         try {
-            generatedAnswer = answerGenerator.generateAnswer(memoriesText, pq.question());
+            Result<String> answerResp = answerGenerator.generateAnswer(memoriesText, pq.question());
+            generatedAnswer = answerResp.content() != null ? answerResp.content() : "";
+            TokenUsage tu = answerResp.tokenUsage();
+            if (tu != null) {
+                answerInTokens = tu.inputTokenCount();
+                answerOutTokens = tu.outputTokenCount();
+            }
         } catch (Exception e) {
             generatedAnswer = "ERROR: " + e.getMessage();
         }
@@ -157,19 +167,32 @@ public class BeamBenchmark implements Runnable {
         // Judge with rubric nuggets
         double score = 0.0;
         StringBuilder reasons = new StringBuilder();
+        Integer judgeInTokens = null;
+        Integer judgeOutTokens = null;
 
         if (pq.rubric().isEmpty()) {
             score = generatedAnswer.startsWith("ERROR") ? 0.0 : 0.5;
             reasons.append("No rubric — default score");
         } else {
             double totalNuggetScore = 0.0;
+            int totalJudgeIn = 0;
+            int totalJudgeOut = 0;
+            boolean anyJudgeTokens = false;
+
             for (int i = 0; i < pq.rubric().size(); i++) {
                 String rubricItem = pq.rubric().get(i);
                 double nuggetScore = 0.0;
                 String nuggetReason = "";
 
                 try {
-                    String judgeResponse = nuggetJudge.judgeNugget(pq.question(), rubricItem, generatedAnswer);
+                    Result<String> judgeResp = nuggetJudge.judgeNugget(pq.question(), rubricItem, generatedAnswer);
+                    String judgeResponse = judgeResp.content() != null ? judgeResp.content() : "";
+                    TokenUsage tu = judgeResp.tokenUsage();
+                    if (tu != null) {
+                        anyJudgeTokens = true;
+                        if (tu.inputTokenCount() != null) totalJudgeIn += tu.inputTokenCount();
+                        if (tu.outputTokenCount() != null) totalJudgeOut += tu.outputTokenCount();
+                    }
                     @SuppressWarnings("unchecked")
                     Map<String, Object> parsed = mapper.readValue(extractJson(judgeResponse), Map.class);
                     Object scoreVal = parsed.get("score");
@@ -186,7 +209,16 @@ public class BeamBenchmark implements Runnable {
                 reasons.append(String.format("[%.1f] %s", nuggetScore, nuggetReason));
             }
             score = totalNuggetScore / pq.rubric().size();
+            if (anyJudgeTokens) {
+                judgeInTokens = totalJudgeIn;
+                judgeOutTokens = totalJudgeOut;
+            }
         }
+
+        int totalIn = (answerInTokens != null ? answerInTokens : 0) + (judgeInTokens != null ? judgeInTokens : 0);
+        int totalOut = (answerOutTokens != null ? answerOutTokens : 0) + (judgeOutTokens != null ? judgeOutTokens : 0);
+        Integer totalTokens = (answerInTokens != null || judgeInTokens != null || answerOutTokens != null || judgeOutTokens != null)
+                ? (totalIn + totalOut) : null;
 
         String verdict = score >= 0.5 ? "CORRECT" : "WRONG";
         TextMetrics.Scores textScores = TextMetrics.compute(pq.answer(), generatedAnswer);
@@ -195,7 +227,8 @@ public class BeamBenchmark implements Runnable {
                 questionId, "beam", pq.questionType(),
                 pq.question(), pq.answer(), generatedAnswer,
                 verdict, reasons.toString(), score, textScores.f1(), textScores.bleu(),
-                searchLatencyMs, memories.size(), topMemoryTexts
+                searchLatencyMs, memories.size(), topMemoryTexts,
+                answerInTokens, answerOutTokens, judgeInTokens, judgeOutTokens, totalTokens
         );
     }
 
@@ -239,13 +272,18 @@ public class BeamBenchmark implements Runnable {
                 "timestamp", Instant.now().toString(),
                 "total_questions", results.size()
         ));
-        output.put("summary", Map.of(
-                "overall_accuracy", summary.overallAccuracy(),
-                "total_questions", summary.totalQuestions(),
-                "total_correct", summary.totalCorrect(),
-                "avg_search_latency_ms", summary.avgSearchLatencyMs(),
-                "avg_memories_retrieved", summary.avgMemoriesRetrieved()
-        ));
+        Map<String, Object> summaryMap = new LinkedHashMap<>();
+        summaryMap.put("overall_accuracy", summary.overallAccuracy());
+        summaryMap.put("total_questions", summary.totalQuestions());
+        summaryMap.put("total_correct", summary.totalCorrect());
+        summaryMap.put("avg_search_latency_ms", summary.avgSearchLatencyMs());
+        summaryMap.put("avg_memories_retrieved", summary.avgMemoriesRetrieved());
+        summaryMap.put("total_input_tokens", summary.totalInputTokens());
+        summaryMap.put("total_output_tokens", summary.totalOutputTokens());
+        summaryMap.put("total_tokens", summary.totalTokens());
+        summaryMap.put("avg_input_tokens_per_question", summary.avgInputTokensPerQuestion());
+        summaryMap.put("avg_output_tokens_per_question", summary.avgOutputTokensPerQuestion());
+        output.put("summary", summaryMap);
         output.put("by_category", summary.byCategory().stream().map(cm -> Map.of(
                 "category", cm.name(),
                 "accuracy", cm.accuracy(),
