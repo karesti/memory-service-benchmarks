@@ -1,5 +1,6 @@
 package io.github.memory.benchmark;
 
+import dev.langchain4j.service.Result;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
@@ -38,5 +39,5 @@ public interface LlmLongContextAnswerGenerator {
 
             Question: {question}
             Short answer:""")
-    String generateAnswer(@V("conversation") String conversation, @V("question") String question);
+    Result<String> generateAnswer(@V("conversation") String conversation, @V("question") String question);
 }
