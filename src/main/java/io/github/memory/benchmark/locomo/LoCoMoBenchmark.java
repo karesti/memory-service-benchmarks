@@ -262,8 +262,15 @@ public class LoCoMoBenchmark implements Runnable {
 
                 // Generate answer from context
                 String generatedAnswer;
+                Integer answerInTokens = null;
+                Integer answerOutTokens = null;
                 try {
-                    generatedAnswer = longContextAnswerGenerator.generateAnswer(context, qa.question());
+                    Result<String> answerResp = longContextAnswerGenerator.generateAnswer(context, qa.question());
+                    generatedAnswer = answerResp.content() != null ? answerResp.content() : "";
+                    if (answerResp.tokenUsage() != null) {
+                        answerInTokens = answerResp.tokenUsage().inputTokenCount();
+                        answerOutTokens = answerResp.tokenUsage().outputTokenCount();
+                    }
                 } catch (Exception e) {
                     generatedAnswer = "ERROR: " + e.getMessage();
                 }
@@ -271,8 +278,15 @@ public class LoCoMoBenchmark implements Runnable {
                 // Judge the answer
                 String verdict = "WRONG";
                 String reason = "";
+                Integer judgeInTokens = null;
+                Integer judgeOutTokens = null;
                 try {
-                    String judgeResponse = verdictJudge.judge(qa.question(), qa.answer(), generatedAnswer);
+                    Result<String> judgeResp = verdictJudge.judge(qa.question(), qa.answer(), generatedAnswer);
+                    String judgeResponse = judgeResp.content();
+                    if (judgeResp.tokenUsage() != null) {
+                        judgeInTokens = judgeResp.tokenUsage().inputTokenCount();
+                        judgeOutTokens = judgeResp.tokenUsage().outputTokenCount();
+                    }
                     @SuppressWarnings("unchecked")
                     Map<String, String> parsed = mapper.readValue(
                             extractJson(judgeResponse), Map.class);
@@ -285,6 +299,15 @@ public class LoCoMoBenchmark implements Runnable {
                 double score = "CORRECT".equalsIgnoreCase(verdict) ? 1.0 : 0.0;
                 TextMetrics.Scores textScores = TextMetrics.compute(qa.answer(), generatedAnswer);
 
+                // Calculate total tokens
+                Integer totalTokens = null;
+                if (answerInTokens != null || answerOutTokens != null || judgeInTokens != null || judgeOutTokens != null) {
+                    totalTokens = (answerInTokens != null ? answerInTokens : 0) +
+                                  (answerOutTokens != null ? answerOutTokens : 0) +
+                                  (judgeInTokens != null ? judgeInTokens : 0) +
+                                  (judgeOutTokens != null ? judgeOutTokens : 0);
+                }
+
                 // Create result with zero retrieval metrics
                 BenchmarkResult result = new BenchmarkResult(
                         questionId, "locomo", categoryName,
@@ -292,7 +315,8 @@ public class LoCoMoBenchmark implements Runnable {
                         verdict, reason, score, textScores.f1(), textScores.bleu(),
                         0.0, // searchLatencyMs = 0 (no search)
                         0,   // memoriesRetrieved = 0 (no retrieval)
-                        List.of() // topMemoryTexts = empty
+                        List.of(), // topMemoryTexts = empty
+                        answerInTokens, answerOutTokens, judgeInTokens, judgeOutTokens, totalTokens
                 );
                 results.add(result);
 
