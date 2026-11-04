@@ -35,6 +35,8 @@ public interface BenchmarkConfig {
 
     LongContext longContext();
 
+    Blind blind();
+
     interface Cognition {
 
         @WithDefault("true")
@@ -107,5 +109,11 @@ public interface BenchmarkConfig {
 
         @WithDefault("0")
         int questionDelayMs();
+    }
+
+    interface Blind {
+
+        @WithDefault("false")
+        boolean enabled();
     }
 }
