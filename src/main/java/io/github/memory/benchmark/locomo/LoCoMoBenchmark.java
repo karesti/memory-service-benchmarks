@@ -9,6 +9,7 @@ import io.github.memory.benchmark.BenchmarkConfig;
 import io.github.memory.benchmark.BenchmarkMode;
 import io.github.memory.benchmark.BenchmarkResult;
 import io.github.memory.benchmark.LlmAnswerGenerator;
+import io.github.memory.benchmark.LlmBlindAnswerGenerator;
 import io.github.memory.benchmark.LlmJudge;
 import io.github.memory.benchmark.LlmLongContextAnswerGenerator;
 import io.github.memory.benchmark.LongContextBuilder;
@@ -51,6 +52,9 @@ public class LoCoMoBenchmark implements Runnable {
     LlmLongContextAnswerGenerator longContextAnswerGenerator;
 
     @Inject
+    LlmBlindAnswerGenerator blindAnswerGenerator;
+
+    @Inject
     LongContextBuilder contextBuilder;
 
     @Inject
@@ -77,6 +81,7 @@ public class LoCoMoBenchmark implements Runnable {
             case LONG_CONTEXT -> "long-context";
             case COGNITION -> "cognition";
             case SUBSTRATE -> "substrate";
+            case BLIND -> "blind";
         };
     }
 
@@ -136,7 +141,9 @@ public class LoCoMoBenchmark implements Runnable {
                 .collect(Collectors.toCollection(TreeSet::new));
 
         // Branch based on mode
-        if (mode.equals("long-context")) {
+        if (mode.equals("blind")) {
+            executeBlind(dataset, targetConvs);
+        } else if (mode.equals("long-context")) {
             executeLongContext(dataset, targetConvs);
         } else {
             executeRetrieval(dataset, targetConvs, mode);
@@ -175,6 +182,120 @@ public class LoCoMoBenchmark implements Runnable {
         log.info(MetricsReport.format(summary));
 
         writeResults(allResults, summary, "long-context");
+    }
+
+    private void executeBlind(List<LoCoMoDataset.Conversation> dataset, Set<Integer> targetConvs) throws Exception {
+        log.infof("Running blind mode: conversations=%s (no retrieval, no context)", targetConvs);
+
+        List<BenchmarkResult> allResults = new ArrayList<>();
+
+        for (int convIdx : targetConvs) {
+            if (convIdx >= dataset.size()) {
+                log.warnf("Conversation %d out of range (dataset has %d)", convIdx, dataset.size());
+                continue;
+            }
+
+            LoCoMoDataset.Conversation conv = dataset.get(convIdx);
+            log.infof("=== Conversation %d: %s & %s (%d questions) ===",
+                    convIdx, conv.speakerA(), conv.speakerB(), conv.questions().size());
+
+            List<BenchmarkResult> convResults = processQuestionsBlind(conv, convIdx);
+            allResults.addAll(convResults);
+
+            long correct = convResults.stream().filter(BenchmarkResult::isCorrect).count();
+            log.infof("Conversation %d: %d/%d correct (%.1f%%)",
+                    convIdx, correct, convResults.size(),
+                    convResults.isEmpty() ? 0 : (double) correct / convResults.size() * 100);
+        }
+
+        logConfiguration("blind");
+
+        MetricsReport.Summary summary = MetricsReport.compute("LoCoMo", allResults);
+        log.info(MetricsReport.format(summary));
+
+        writeResults(allResults, summary, "blind");
+    }
+
+    private List<BenchmarkResult> processQuestionsBlind(LoCoMoDataset.Conversation conv, int convIdx) {
+        List<BenchmarkResult> results = new ArrayList<>();
+
+        for (LoCoMoDataset.QA qa : conv.questions()) {
+            if (qa.category() == 5) continue;
+
+            try {
+                String questionId = "conv" + convIdx + "_q" + qa.index();
+                String categoryName = CATEGORY_NAMES.getOrDefault(qa.category(), "unknown-" + qa.category());
+
+                // Generate answer with no context
+                String generatedAnswer;
+                Integer answerInTokens = null;
+                Integer answerOutTokens = null;
+                try {
+                    Result<String> answerResp = blindAnswerGenerator.generateAnswer(qa.question());
+                    generatedAnswer = answerResp.content() != null ? answerResp.content() : "";
+                    if (answerResp.tokenUsage() != null) {
+                        answerInTokens = answerResp.tokenUsage().inputTokenCount();
+                        answerOutTokens = answerResp.tokenUsage().outputTokenCount();
+                    }
+                } catch (Exception e) {
+                    generatedAnswer = "ERROR: " + e.getMessage();
+                }
+
+                // Judge the answer
+                String verdict = "WRONG";
+                String reason = "";
+                Integer judgeInTokens = null;
+                Integer judgeOutTokens = null;
+                try {
+                    Result<String> judgeResp = verdictJudge.judge(qa.question(), qa.answer(), generatedAnswer);
+                    String judgeResponse = judgeResp.content();
+                    if (judgeResp.tokenUsage() != null) {
+                        judgeInTokens = judgeResp.tokenUsage().inputTokenCount();
+                        judgeOutTokens = judgeResp.tokenUsage().outputTokenCount();
+                    }
+                    @SuppressWarnings("unchecked")
+                    Map<String, String> parsed = mapper.readValue(
+                            extractJson(judgeResponse), Map.class);
+                    verdict = parsed.getOrDefault("verdict", "WRONG");
+                    reason = parsed.getOrDefault("reason", "");
+                } catch (Exception e) {
+                    reason = "Judge parsing failed: " + e.getMessage();
+                }
+
+                double score = "CORRECT".equalsIgnoreCase(verdict) ? 1.0 : 0.0;
+                TextMetrics.Scores textScores = TextMetrics.compute(qa.answer(), generatedAnswer);
+
+                // Calculate total tokens
+                Integer totalTokens = null;
+                if (answerInTokens != null || answerOutTokens != null || judgeInTokens != null || judgeOutTokens != null) {
+                    totalTokens = (answerInTokens != null ? answerInTokens : 0) +
+                                  (answerOutTokens != null ? answerOutTokens : 0) +
+                                  (judgeInTokens != null ? judgeInTokens : 0) +
+                                  (judgeOutTokens != null ? judgeOutTokens : 0);
+                }
+
+                // Create result with zero retrieval metrics
+                BenchmarkResult result = new BenchmarkResult(
+                        questionId, "locomo", categoryName,
+                        qa.question(), qa.answer(), generatedAnswer,
+                        verdict, reason, score, textScores.f1(), textScores.bleu(),
+                        0.0, // searchLatencyMs = 0 (no search)
+                        0,   // memoriesRetrieved = 0 (no retrieval)
+                        List.of(), // topMemoryTexts = empty
+                        answerInTokens, answerOutTokens, judgeInTokens, judgeOutTokens, totalTokens
+                );
+                results.add(result);
+
+                String status = result.isCorrect() ? "CORRECT" : "WRONG";
+                log.infof("  [%s] cat=%s q=%s", status, result.category(),
+                        qa.question().length() > 60 ? qa.question().substring(0, 60) + "..." : qa.question());
+
+            } catch (Exception e) {
+                log.warnf("Failed to process question %d for conv %d: %s", qa.index(), convIdx, e.getMessage());
+            }
+        }
+
+        return results;
     }
 
     private void executeRetrieval(List<LoCoMoDataset.Conversation> dataset, Set<Integer> targetConvs, String mode) throws Exception {

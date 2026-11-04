@@ -103,6 +103,33 @@ java -Dmemory-service.cognition.generate-profile=false -jar target/quarkus-app/q
 
 ## Running the benchmarks
 
+### Benchmark Modes
+
+The benchmark supports four modes:
+
+1. **COGNITION mode** (`benchmark.cognition.enabled=true`, default):
+   - Ingests conversations into memory-service
+   - Waits for cognition processor to extract memories
+   - Searches cognition-extracted memories via `/v1/memories/search`
+   - Tests the full cognition pipeline
+
+2. **SUBSTRATE mode** (`benchmark.cognition.enabled=false`):
+   - Ingests conversations into memory-service
+   - Skips cognition processor wait
+   - Searches raw conversation entries via `/v1/conversations/search`
+   - Tests baseline performance without cognition extraction
+
+3. **LONG-CONTEXT mode** (`benchmark.long-context.enabled=true`):
+   - Bypasses memory-service entirely
+   - Packs conversation history into LLM context window
+   - Tests pure LLM performance without any retrieval
+
+4. **BLIND mode** (`benchmark.blind.enabled=true`):
+   - No ingestion, no retrieval, no context
+   - Sends questions directly to LLM with no memory
+   - Measures minimum token usage baseline
+   - Expected accuracy: ~0% (useful for cost analysis)
+
 ### Start the services
 
 ```bash
@@ -115,6 +142,8 @@ docker compose --profile cognition up -d
 The compose stack exposes memory-service on `http://localhost:8082` and Keycloak on
 `http://localhost:8081`. The benchmark creates Keycloak users on demand using
 the compose admin credentials, then logs in as each benchmark user.
+
+**Note for SUBSTRATE mode**: Only memory-service is required. The cognition processor can be stopped.
 
 ### LoCoMo
 
@@ -133,6 +162,9 @@ java -Xmx2g -Dbenchmark.cognition.enabled=false -jar target/quarkus-app/quarkus-
 
 # Without profile generation
 java -Xmx2g -Dmemory-service.cognition.generate-profile=false -jar target/quarkus-app/quarkus-run.jar locomo
+
+# Blind mode (no retrieval, no context - minimum token usage)
+java -Xmx2g -Dbenchmark.blind.enabled=true -jar target/quarkus-app/quarkus-run.jar locomo
 ```
 
 ### LongMemEval
@@ -232,8 +264,9 @@ All settings in `src/main/resources/application.properties`:
 | `benchmark.top-k` | `50` | Max memories to retrieve per question |
 | `benchmark.output-dir` | `results` | Output directory |
 | `benchmark.user-id-format` | _(speaker_a name)_ | User ID format with placeholders: `{convIdx}`, `{speakerA}`, `{speakerB}`. Default uses speaker_a name (e.g., "alice"). Use `locomo_{convIdx}` for legacy format. |
-| `benchmark.cognition.enabled` | `true` | Wait for cognition processor |
+| `benchmark.cognition.enabled` | `true` | Wait for cognition processor (mutually exclusive with long-context and blind) |
 | `benchmark.cognition.namespace` | `cognition.v1` | Cognition memory namespace |
+| `benchmark.blind.enabled` | `false` | Enable blind mode: no retrieval, no context (mutually exclusive with cognition and long-context) |
 | `benchmark.cognition.wait-timeout-seconds` | `600` | Max wait for extraction |
 | `benchmark.cognition.poll-interval-seconds` | `10` | Polling interval |
 | `benchmark.cognition.stable-seconds` | `90` | Seconds of stability before proceeding |
