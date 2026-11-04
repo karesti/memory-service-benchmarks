@@ -65,6 +65,14 @@ public class MemoryServiceClient {
       }
    }
 
+   @JsonIgnoreProperties(ignoreUnknown = true)
+   public record ConversationSearchResponse(List<ConversationSearchItem> data, String afterCursor) {
+      public ConversationSearchResponse { if (data == null) data = List.of(); }
+   }
+
+   @JsonIgnoreProperties(ignoreUnknown = true)
+   public record ConversationSearchItem(String conversationId, String entryId, Double score, String searchableText) {}
+
    public record MemoryResult(String id, String memory, double score) {}
    @JsonIgnoreProperties(ignoreUnknown = true)
    private record TokenResponse(String access_token, Long expires_in) {}
@@ -116,11 +124,21 @@ public class MemoryServiceClient {
    }
 
    public List<MemoryResult> searchMemories(String userId, String query, int topK) throws Exception {
+      if (benchmarkConfig.cognition().enabled()) {
+         return searchCognitionMemories(userId, query, topK);
+      } else {
+         return searchConversationEntries(userId, query, topK);
+      }
+   }
+
+   private List<MemoryResult> searchCognitionMemories(String userId, String query, int topK) throws Exception {
       String effectiveUserId = effectiveUserId(userId);
       Map<String, Object> body = Map.of(
               "namespace_prefix", List.of("user", effectiveUserId, benchmarkConfig.cognition().namespace()),
               "query", query,
               "limit", topK);
+
+      log.debugf("Searching cognition memories (namespace: user/%s/%s)", effectiveUserId, benchmarkConfig.cognition().namespace());
 
       HttpResponse<String> resp = post(userId, "/v1/memories/search", body);
       if (resp.statusCode() == 501) {
@@ -148,7 +166,44 @@ public class MemoryServiceClient {
       return results;
    }
 
+   private List<MemoryResult> searchConversationEntries(String userId, String query, int topK) throws Exception {
+      Map<String, Object> body = Map.of(
+              "query", query,
+              "searchType", "auto",
+              "limit", topK);
+
+      log.debugf("Searching conversation entries (substrate mode)");
+
+      HttpResponse<String> resp = post(userId, "/v1/conversations/search", body);
+      if (resp.statusCode() == 501) {
+         log.warn("Conversation search not available (501). Check vector store configuration.");
+         return List.of();
+      }
+      if (resp.statusCode() >= 300) {
+         log.warnf("Conversation search failed: %d %s", resp.statusCode(), resp.body());
+         return List.of();
+      }
+
+      ConversationSearchResponse search = mapper.readValue(resp.body(), ConversationSearchResponse.class);
+
+      List<MemoryResult> results = new ArrayList<>();
+      for (ConversationSearchItem item : search.data()) {
+         if (item.searchableText() != null && !item.searchableText().isEmpty()) {
+            double score = item.score() != null ? item.score() : 0.0;
+            results.add(new MemoryResult(item.entryId(), item.searchableText(), score));
+         }
+      }
+
+      results.sort(Comparator.comparingDouble(MemoryResult::score).reversed());
+      return results;
+   }
+
    public int countMemories(String userId) {
+      // Only used during cognition wait, so only count cognition memories
+      if (!benchmarkConfig.cognition().enabled()) {
+         return 0;
+      }
+      
       try {
          String effectiveUserId = effectiveUserId(userId);
          Map<String, Object> body = Map.of(
